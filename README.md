@@ -268,6 +268,16 @@ frontend:
 
 4. Restart HA to load the script.
 
+## Changing the HA URL
+
+To change the HA URL or webhook ID after initial setup, close the browser to get back to the CH5 app:
+
+```
+BROWSERCLOSE
+```
+
+The CH5 setup wizard will be visible. Tap **Reconfigure**, enter the new URL, and tap **Launch**.
+
 ## Troubleshooting
 
 **Panel shows CH5 setup wizard but browser never opens**
