@@ -1,0 +1,13 @@
+{
+  "name": "crestron-ha-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal CH5 launcher for Home Assistant on Crestron TSW panels",
+  "scripts": {
+    "archive": "ch5-cli archive -p crestron-ha-launcher -d dist -o archive",
+    "deploy": "ch5-cli deploy -p -H $PANEL_IP -t touchscreen archive/crestron-ha-launcher.ch5z"
+  },
+  "devDependencies": {
+    "@crestron/ch5-utilities-cli": "^2.0.0"
+  }
+}

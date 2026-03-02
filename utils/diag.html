@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crestron WebView Diagnostics</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #eee; font: 14px monospace; padding: 20px; overflow-y: auto; }
+  h1 { color: #0af; font-size: 18px; margin-bottom: 10px; }
+  h2 { color: #ff0; font-size: 14px; margin: 16px 0 6px; }
+  .pass { color: #0f0; }
+  .fail { color: #f44; }
+  .warn { color: #fa0; }
+  .result { margin: 3px 0; padding: 2px 6px; }
+  #keys { background: #1a1a2e; padding: 8px; margin-top: 10px; max-height: 200px; overflow-y: auto;
+          border-radius: 6px; }
+</style>
+</head>
+<body>
+
+<h1>Crestron WebView Diagnostics</h1>
+
+<h2>Browser Info</h2>
+<div id="info"></div>
+
+<h2>Storage APIs</h2>
+<div id="storage"></div>
+
+<h2>Read/Write Tests</h2>
+<div id="rw"></div>
+
+<h2>Network &amp; APIs</h2>
+<div id="apis"></div>
+
+<h2>Key Events (press side buttons)</h2>
+<div id="keys"></div>
+
+<script>
+var infoEl = document.getElementById('info');
+var storageEl = document.getElementById('storage');
+var rwEl = document.getElementById('rw');
+var apisEl = document.getElementById('apis');
+var keysEl = document.getElementById('keys');
+
+function log(el, msg, cls) {
+  var d = document.createElement('div');
+  d.className = 'result ' + (cls || '');
+  d.textContent = msg;
+  el.appendChild(d);
+}
+
+// === Browser Info ===
+log(infoEl, 'UA: ' + navigator.userAgent);
+log(infoEl, 'Platform: ' + navigator.platform);
+log(infoEl, 'URL: ' + window.location.href);
+log(infoEl, 'Protocol: ' + window.location.protocol);
+log(infoEl, 'Screen: ' + screen.width + 'x' + screen.height + ' @ ' + (window.devicePixelRatio || 1) + 'x');
+
+// === Storage Existence ===
+function probe(name) {
+  try {
+    var val = window[name];
+    if (val === null) return 'null';
+    if (val === undefined) return 'undefined';
+    return typeof val;
+  } catch(e) { return 'throws: ' + e.name; }
+}
+log(storageEl, 'localStorage: ' + probe('localStorage'), window.localStorage ? 'pass' : 'fail');
+log(storageEl, 'sessionStorage: ' + probe('sessionStorage'), window.sessionStorage ? 'pass' : 'fail');
+
+// Property descriptors
+try {
+  var desc = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  log(storageEl, 'localStorage descriptor: ' + (desc ? 'configurable=' + desc.configurable + ' hasGetter=' + !!desc.get : 'none'));
+} catch(e) { log(storageEl, 'localStorage descriptor: ' + e.message, 'warn'); }
+
+// === localStorage R/W ===
+try {
+  if (window.localStorage) {
+    window.localStorage.setItem('__diag', 'hello');
+    var v = window.localStorage.getItem('__diag');
+    window.localStorage.removeItem('__diag');
+    log(rwEl, 'localStorage R/W: ' + (v === 'hello' ? 'OK' : 'mismatch: ' + v), v === 'hello' ? 'pass' : 'fail');
+  } else {
+    log(rwEl, 'localStorage R/W: skipped (null/undefined)', 'fail');
+  }
+} catch(e) { log(rwEl, 'localStorage R/W: ' + e.name + ': ' + e.message, 'fail'); }
+
+// === sessionStorage R/W ===
+try {
+  if (window.sessionStorage) {
+    window.sessionStorage.setItem('__diag', 'hello');
+    var v2 = window.sessionStorage.getItem('__diag');
+    window.sessionStorage.removeItem('__diag');
+    log(rwEl, 'sessionStorage R/W: ' + (v2 === 'hello' ? 'OK' : 'mismatch: ' + v2), v2 === 'hello' ? 'pass' : 'fail');
+  } else {
+    log(rwEl, 'sessionStorage R/W: skipped (null/undefined)', 'fail');
+  }
+} catch(e) { log(rwEl, 'sessionStorage R/W: ' + e.name + ': ' + e.message, 'fail'); }
+
+// === IndexedDB ===
+try {
+  var idb = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB;
+  log(rwEl, 'IndexedDB: ' + (idb ? 'available' : 'not available'), idb ? 'pass' : 'fail');
+  if (idb) {
+    var req = idb.open('__diag', 1);
+    req.onsuccess = function() { log(rwEl, 'IndexedDB open: OK', 'pass'); req.result.close(); idb.deleteDatabase('__diag'); };
+    req.onerror = function(e) { log(rwEl, 'IndexedDB open: ' + e.target.error, 'fail'); };
+  }
+} catch(e) { log(rwEl, 'IndexedDB: ' + e.message, 'fail'); }
+
+// === Cookies ===
+try {
+  document.cookie = '__diag=1;path=/';
+  var ok = document.cookie.indexOf('__diag') >= 0;
+  document.cookie = '__diag=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+  log(rwEl, 'Cookie R/W: ' + (ok ? 'OK' : 'failed'), ok ? 'pass' : 'fail');
+} catch(e) { log(rwEl, 'Cookie: ' + e.message, 'fail'); }
+
+// === APIs ===
+log(apisEl, 'fetch: ' + (window.fetch ? 'yes' : 'no'), window.fetch ? 'pass' : 'fail');
+log(apisEl, 'WebSocket: ' + (window.WebSocket ? 'yes' : 'no'), window.WebSocket ? 'pass' : 'fail');
+log(apisEl, 'Service Worker: ' + (navigator.serviceWorker ? 'yes' : 'no'));
+log(apisEl, 'Cache API: ' + (window.caches ? 'yes' : 'no'));
+log(apisEl, 'ES Modules: ' + (function() { try { new Function('import("")'); return 'yes'; } catch(e) { return 'no'; } })());
+log(apisEl, 'Custom Elements: ' + (window.customElements ? 'yes' : 'no'));
+log(apisEl, 'Shadow DOM: ' + (!!HTMLElement.prototype.attachShadow ? 'yes' : 'no'));
+
+// === Key Events ===
+document.addEventListener('keydown', function(e) {
+  var d = document.createElement('div');
+  d.className = 'result pass';
+  d.textContent = 'DOWN key=' + e.key + ' code=' + e.code + ' keyCode=' + e.keyCode + ' which=' + e.which;
+  keysEl.insertBefore(d, keysEl.firstChild);
+  while (keysEl.children.length > 50) keysEl.removeChild(keysEl.lastChild);
+}, true);
+
+document.addEventListener('keyup', function(e) {
+  var d = document.createElement('div');
+  d.className = 'result fail';
+  d.textContent = 'UP   key=' + e.key + ' code=' + e.code + ' keyCode=' + e.keyCode + ' which=' + e.which;
+  keysEl.insertBefore(d, keysEl.firstChild);
+  while (keysEl.children.length > 50) keysEl.removeChild(keysEl.lastChild);
+}, true);
+</script>
+</body>
+</html>

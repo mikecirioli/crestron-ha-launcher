@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HA Launcher</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #eee; font-family: sans-serif; padding: 30px; }
+  h1 { color: #0af; font-size: 22px; margin-bottom: 6px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 20px; }
+  label { display: block; color: #aaa; font-size: 13px; margin-bottom: 4px; margin-top: 16px; }
+  input { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #444; border-radius: 6px;
+          background: #222; color: #eee; outline: none; }
+  input:focus { border-color: #0af; }
+  button { margin-top: 24px; padding: 14px 32px; font-size: 16px; border: none; border-radius: 6px;
+           background: #0af; color: #000; font-weight: bold; cursor: pointer; }
+  button:active { background: #08d; }
+  #wizard { max-width: 500px; margin: 40px auto; }
+  #status { max-width: 600px; margin: 40px auto; }
+  #log { margin-top: 20px; font: 13px monospace; color: #0f0; }
+  #log .err { color: #f44; }
+  #log .warn { color: #fa0; }
+  .hint { color: #666; font-size: 12px; margin-top: 4px; }
+  #resetBtn { background: none; border: 1px solid #444; color: #888; font-size: 12px;
+              padding: 6px 12px; margin-top: 16px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="wizard" style="display:none">
+  <h1>HA Launcher Setup</h1>
+  <div class="subtitle">Configure your Home Assistant connection</div>
+
+  <label for="haUrl">Home Assistant URL</label>
+  <input id="haUrl" type="text" placeholder="http://192.168.1.100:8123" />
+  <div class="hint">Include http:// and port number</div>
+
+  <label for="webhookId">Webhook ID</label>
+  <input id="webhookId" type="text" value="crestron-open-browser" />
+  <div class="hint">Must match the webhook_id in your HA automation</div>
+
+  <button id="saveBtn">Launch</button>
+</div>
+
+<div id="status" style="display:none">
+  <h1>HA Launcher</h1>
+  <div id="log"></div>
+  <button id="resetBtn">Reconfigure</button>
+</div>
+
+<script>
+// === Cookie helpers ===
+function setCookie(name, value, days) {
+  var d = new Date();
+  d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+  document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + d.toUTCString() + ';path=/';
+}
+
+function getCookie(name) {
+  var prefix = name + '=';
+  var parts = document.cookie.split(';');
+  for (var i = 0; i < parts.length; i++) {
+    var c = parts[i].trim();
+    if (c.indexOf(prefix) === 0) return decodeURIComponent(c.substring(prefix.length));
+  }
+  return '';
+}
+
+function clearCookie(name) {
+  document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+}
+
+// === Logging ===
+var logEl = document.getElementById('log');
+function log(msg, cls) {
+  var d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = new Date().toISOString().substr(11, 8) + ' ' + msg;
+  logEl.appendChild(d);
+}
+
+// === Config ===
+function loadConfig() {
+  var url = getCookie('ha_url');
+  var webhook = getCookie('ha_webhook') || 'crestron-open-browser';
+  if (url) return { url: url, webhook: webhook };
+  return null;
+}
+
+function saveConfig(url, webhook) {
+  setCookie('ha_url', url, 3650);
+  setCookie('ha_webhook', webhook, 3650);
+}
+
+// === Webhook ===
+function fireWebhook(config, attempt) {
+  attempt = attempt || 1;
+  var endpoint = config.url + '/api/webhook/' + config.webhook;
+  log((attempt > 1 ? 'Retry #' + attempt + ': ' : '') + 'Firing webhook...');
+
+  fetch(endpoint, { method: 'POST', mode: 'no-cors' })
+    .then(function() {
+      log('Webhook sent — browser should open shortly');
+    })
+    .catch(function(e) {
+      log('Webhook failed: ' + e.message, 'err');
+      if (attempt < 5) {
+        var delay = attempt * 3;
+        log('Retrying in ' + delay + 's...', 'warn');
+        setTimeout(function() { fireWebhook(config, attempt + 1); }, delay * 1000);
+      } else {
+        log('Giving up after 5 attempts. Check HA is running.', 'err');
+      }
+    });
+}
+
+// === UI ===
+var wizardEl = document.getElementById('wizard');
+var statusEl = document.getElementById('status');
+
+function showWizard(prefill) {
+  wizardEl.style.display = 'block';
+  statusEl.style.display = 'none';
+  if (prefill) {
+    document.getElementById('haUrl').value = prefill.url || '';
+    document.getElementById('webhookId').value = prefill.webhook || 'crestron-open-browser';
+  }
+}
+
+function showStatus(config) {
+  wizardEl.style.display = 'none';
+  statusEl.style.display = 'block';
+  log('Target: ' + config.url);
+  log('Webhook: ' + config.webhook);
+  fireWebhook(config);
+}
+
+document.getElementById('saveBtn').addEventListener('click', function() {
+  var url = document.getElementById('haUrl').value.trim().replace(/\/+$/, '');
+  var webhook = document.getElementById('webhookId').value.trim() || 'crestron-open-browser';
+  if (!url) { document.getElementById('haUrl').focus(); return; }
+  saveConfig(url, webhook);
+  showStatus({ url: url, webhook: webhook });
+});
+
+document.getElementById('resetBtn').addEventListener('click', function() {
+  var config = loadConfig();
+  clearCookie('ha_url');
+  clearCookie('ha_webhook');
+  logEl.innerHTML = '';
+  showWizard(config);
+});
+
+// === Boot ===
+var config = loadConfig();
+if (config) {
+  showStatus(config);
+} else {
+  showWizard();
+}
+</script>
+</body>
+</html>

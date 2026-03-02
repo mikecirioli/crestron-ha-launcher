@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Key Event Tester</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #eee; font: 14px monospace; padding: 20px; }
+  h1 { color: #0af; font-size: 18px; margin-bottom: 4px; }
+  .hint { color: #666; font-size: 12px; margin-bottom: 20px; }
+  #last { background: #1a1a2e; border: 2px solid #0af; border-radius: 8px;
+          padding: 20px; margin-bottom: 20px; min-height: 100px; }
+  #last h2 { color: #0af; font-size: 14px; margin-bottom: 10px; }
+  .val { font-size: 20px; color: #0f0; margin: 4px 0; }
+  .val span { color: #888; font-size: 13px; }
+  #log { max-height: 50vh; overflow-y: auto; }
+  .event { padding: 4px 0; border-bottom: 1px solid #222; }
+  .event .ts { color: #666; }
+  .event .type { color: #fa0; display: inline-block; width: 80px; }
+  .event .data { color: #0f0; }
+  .dn { color: #0f0; }
+  .up { color: #f44; }
+  button { margin-top: 10px; padding: 8px 16px; background: #333; color: #eee;
+           border: 1px solid #555; border-radius: 4px; font: 13px monospace; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h1>Key Event Tester</h1>
+<div class="hint">Press any side button or key — values will appear below</div>
+
+<div id="last">
+  <h2>Last Key Pressed</h2>
+  <div id="lastInfo" style="color:#666">Waiting for input...</div>
+</div>
+
+<button onclick="document.getElementById('log').innerHTML=''">Clear Log</button>
+
+<div id="log"></div>
+
+<script>
+var logEl = document.getElementById('log');
+var lastEl = document.getElementById('lastInfo');
+
+function ts() {
+  return new Date().toISOString().substr(11, 12);
+}
+
+function logEvent(type, e, cls) {
+  // Update last key display
+  if (type === 'keydown') {
+    lastEl.innerHTML =
+      '<div class="val">key: <strong>' + e.key + '</strong></div>' +
+      '<div class="val">code: <strong>' + e.code + '</strong></div>' +
+      '<div class="val">keyCode: <strong>' + e.keyCode + '</strong></div>' +
+      '<div class="val">which: <strong>' + e.which + '</strong></div>' +
+      '<div class="val"><span>location: ' + e.location + ' | repeat: ' + e.repeat +
+      ' | shift: ' + e.shiftKey + ' | ctrl: ' + e.ctrlKey + ' | alt: ' + e.altKey +
+      ' | meta: ' + e.metaKey + '</span></div>';
+  }
+
+  // Add to log
+  var d = document.createElement('div');
+  d.className = 'event';
+  d.innerHTML = '<span class="ts">' + ts() + '</span> ' +
+    '<span class="type ' + cls + '">' + type + '</span> ' +
+    '<span class="data">key=' + e.key + ' code=' + e.code +
+    ' keyCode=' + e.keyCode + ' which=' + e.which + '</span>';
+  logEl.insertBefore(d, logEl.firstChild);
+
+  // Keep last 200 entries
+  while (logEl.children.length > 200) logEl.removeChild(logEl.lastChild);
+}
+
+document.addEventListener('keydown', function(e) { logEvent('keydown', e, 'dn'); }, true);
+document.addEventListener('keyup', function(e) { logEvent('keyup', e, 'up'); }, true);
+</script>
+</body>
+</html>
