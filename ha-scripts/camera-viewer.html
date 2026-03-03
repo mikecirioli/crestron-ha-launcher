@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camera Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  /* ── Cross-fade between two image layers ───────────────── */
+  .cam {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 1s ease-in-out;
+    z-index: 1;
+  }
+  .cam.active {
+    opacity: 1;
+    z-index: 2;
+  }
+
+  /* ── Camera name badge ─────────────────────────────────── */
+  .badge {
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 10;
+    opacity: 0.85;
+  }
+</style>
+</head>
+<body>
+  <img class="cam active" id="cam-a" alt="">
+  <img class="cam" id="cam-b" alt="">
+  <div class="badge" id="badge">Loading...</div>
+
+  <script>
+  (function() {
+    'use strict';
+
+    // ── Configuration ────────────────────────────────────────
+    var CAMERAS = [
+      { entity: 'camera.frontporch', name: 'Front Porch' },
+      { entity: 'camera.driveway',   name: 'Driveway' },
+      { entity: 'camera.backyard',   name: 'Back Yard' },
+      { entity: 'camera.critter',    name: 'Critter' },
+      { entity: 'camera.armory',     name: 'Armory' },
+      { entity: 'camera.pancam',     name: 'Pan Cam' },
+      { entity: 'camera.gatetown',   name: 'Gatetown' }
+    ];
+
+    var CYCLE_TIME   = 15000;  // 15s per camera
+    var REFRESH_TIME = 10000;  // refresh snapshot every 10s
+    var LOAD_TIMEOUT = 8000;   // skip if image doesn't load in 8s
+
+    // ── State ────────────────────────────────────────────────
+    var currentIndex = 0;
+    var activeSlot = 'a';
+    var camA = document.getElementById('cam-a');
+    var camB = document.getElementById('cam-b');
+    var badge = document.getElementById('badge');
+    var cycleTimer = null;
+    var refreshTimer = null;
+    var loadTimer = null;
+    var prevObjectUrl = null;
+
+    // ── HA access (via parent frame) ─────────────────────────
+    function getHass() {
+      try {
+        var ha = window.parent.document.querySelector('home-assistant');
+        return (ha && ha.hass) ? ha.hass : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function getAccessToken() {
+      // Try parent HA frame first (when embedded as iframe)
+      var hass = getHass();
+      if (hass && hass.auth && hass.auth.data) {
+        return hass.auth.data.access_token;
+      }
+      // Fallback: try own window's HA instance (when opened directly)
+      try {
+        var ha = document.querySelector('home-assistant');
+        if (ha && ha.hass && ha.hass.auth && ha.hass.auth.data) {
+          return ha.hass.auth.data.access_token;
+        }
+      } catch (e) {}
+      // Fallback: try localStorage tokens
+      try {
+        var tokens = JSON.parse(localStorage.getItem('hassTokens'));
+        if (tokens && tokens.access_token) return tokens.access_token;
+      } catch (e) {}
+      return null;
+    }
+
+    // ── Fetch snapshot as blob with auth ─────────────────────
+    // Returns an object URL that can be set as img.src.
+    // Caller must revoke the old URL to free memory.
+    function fetchSnapshot(entity, callback) {
+      var token = getAccessToken();
+      if (!token) {
+        callback(null);
+        return;
+      }
+      fetch('/api/camera_proxy/' + entity, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+      .then(function(r) {
+        if (!r.ok) throw new Error(r.status);
+        return r.blob();
+      })
+      .then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        callback(url);
+      })
+      .catch(function() {
+        callback(null);
+      });
+    }
+
+    // ── Show a specific camera (crossfade) ───────────────────
+    function showCamera(index) {
+      currentIndex = index;
+      var cam = CAMERAS[currentIndex];
+      badge.textContent = cam.name;
+
+      var incoming = activeSlot === 'a' ? camB : camA;
+      var outgoing = activeSlot === 'a' ? camA : camB;
+
+      clearTimeout(loadTimer);
+
+      // Timeout: skip if fetch takes too long
+      loadTimer = setTimeout(function() {
+        scheduleRefresh();
+      }, LOAD_TIMEOUT);
+
+      fetchSnapshot(cam.entity, function(url) {
+        clearTimeout(loadTimer);
+        if (url) {
+          incoming.src = url;
+          incoming.classList.add('active');
+          outgoing.classList.remove('active');
+          // Free memory from the outgoing image
+          if (outgoing.src && outgoing.src.indexOf('blob:') === 0) {
+            URL.revokeObjectURL(outgoing.src);
+          }
+          activeSlot = activeSlot === 'a' ? 'b' : 'a';
+        }
+        scheduleRefresh();
+      });
+    }
+
+    // ── In-place refresh (no crossfade) ──────────────────────
+    function refreshCurrent() {
+      var cam = CAMERAS[currentIndex];
+      fetchSnapshot(cam.entity, function(url) {
+        if (url) {
+          var active = activeSlot === 'a' ? camA : camB;
+          var oldSrc = active.src;
+          active.src = url;
+          if (oldSrc && oldSrc.indexOf('blob:') === 0) {
+            URL.revokeObjectURL(oldSrc);
+          }
+        }
+      });
+    }
+
+    function scheduleRefresh() {
+      clearInterval(refreshTimer);
+      refreshTimer = setInterval(refreshCurrent, REFRESH_TIME);
+    }
+
+    // ── Cycling ──────────────────────────────────────────────
+    function cycleNext() {
+      showCamera((currentIndex + 1) % CAMERAS.length);
+    }
+
+    function cyclePrevious() {
+      showCamera((currentIndex - 1 + CAMERAS.length) % CAMERAS.length);
+    }
+
+    function startCycling() {
+      clearInterval(cycleTimer);
+      cycleTimer = setInterval(cycleNext, CYCLE_TIME);
+    }
+
+    // ── Listen for commands from parent (crestron-panel.js) ──
+    window.addEventListener('message', function(e) {
+      if (e.data === 'next') {
+        cycleNext();
+        startCycling();
+      } else if (e.data === 'previous') {
+        cyclePrevious();
+        startCycling();
+      }
+    });
+
+    // ── Wait for HA to be ready, then start ──────────────────
+    function start() {
+      badge.textContent = 'Loading...';
+      showCamera(0);
+      startCycling();
+    }
+
+    function waitForHass() {
+      var attempts = 0;
+      var interval = setInterval(function() {
+        var token = getAccessToken();
+        if (token) {
+          clearInterval(interval);
+          badge.textContent = 'Got token, loading...';
+          start();
+        }
+        if (++attempts > 100) {
+          clearInterval(interval);
+          badge.textContent = 'No token found';
+        } else if (attempts % 10 === 0) {
+          badge.textContent = 'Waiting for HA... (' + attempts + ')';
+        }
+      }, 200);
+    }
+
+    waitForHass();
+
+  })();
+  </script>
+</body>
+</html>

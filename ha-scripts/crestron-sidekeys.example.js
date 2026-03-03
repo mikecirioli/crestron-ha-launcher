@@ -1,4 +1,12 @@
-// Crestron TSW side button handler for Home Assistant
+// ═══════════════════════════════════════════════════════════════════
+// EXAMPLE: Standalone side button handler (simple version)
+// ═══════════════════════════════════════════════════════════════════
+// This is a minimal side-button-only script. Use it if you just want
+// hardware button → HA service calls, without idle detection, camera
+// cycling, or photo frame integration.
+//
+// For the full-featured version, use crestron-panel.js instead.
+// ═══════════════════════════════════════════════════════════════════
 // Deploy to HA: config/www/crestron-sidekeys.js
 // Add to configuration.yaml:
 //   frontend:

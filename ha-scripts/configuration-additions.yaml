@@ -1,0 +1,50 @@
+# ═══════════════════════════════════════════════════════════════════
+# Additions to configuration.yaml
+# ═══════════════════════════════════════════════════════════════════
+# Merge these into your existing configuration.yaml.
+# Items marked [EXISTING] are from the original setup — verify
+# they match and update the BROWSEROPEN URL.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Shell commands ────────────────────────────────────────────────
+# Replace <HA_IP> with your Home Assistant IP address.
+shell_command:
+  # [EXISTING - UPDATE URL] Open browser to the Crestron dashboard
+  crestron_open_browser: >-
+    python3 /config/scripts/crestron_cmd.py
+    'BROWSEROPEN http://<HA_IP>:8123/lovelace-crestron/home'
+  # [EXISTING] Close the panel browser
+  crestron_close_browser: >-
+    python3 /config/scripts/crestron_cmd.py 'BROWSERCLOSE'
+  # [EXISTING] Panel standby controls
+  crestron_standby: >-
+    python3 /config/scripts/crestron_cmd.py 'standby'
+  crestron_wake: >-
+    python3 /config/scripts/crestron_cmd.py 'standby off'
+  # [NEW] Photo frame image list builder
+  photoframe_build_list: >-
+    python3 /config/scripts/photoframe_build_list.py
+
+# ── Input select: camera cycling ─────────────────────────────────
+input_select:
+  camera_selector:
+    name: Camera Selector
+    icon: mdi:cctv
+    options:
+      - camera.frontporch
+      - camera.driveway
+      - camera.backyard
+      - camera.critter
+      - camera.armory
+      - camera.pancam
+      - camera.gatetown
+
+# ── Frontend: load the panel controller JS ────────────────────────
+# This replaces the old crestron-sidekeys.js reference.
+# The script has a guard clause — it only activates on the
+# lovelace-crestron dashboard and is inert everywhere else.
+frontend:
+  extra_js_url_es5:
+    - /local/crestron-panel.js
+    # Remove crestron-sidekeys.js if you had it — its functionality
+    # is now merged into crestron-panel.js

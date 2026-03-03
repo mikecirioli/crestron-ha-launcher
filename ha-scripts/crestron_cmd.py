@@ -37,11 +37,18 @@ try:
     stdin, stdout, stderr = client.exec_command(cmd, timeout=10)
     out = stdout.read().decode(errors="replace").strip()
     err = stderr.read().decode(errors="replace").strip()
+    exit_code = stdout.channel.recv_exit_status()
     if out:
         print(out)
     if err:
         print(err, file=sys.stderr)
-    sys.exit(stdout.channel.recv_exit_status())
+    # Mark file objects as closed so BufferedFile.__del__ is a no-op.
+    # Avoids paramiko warnings on Python 3.13+ without sending extra
+    # SSH channel-close messages that confuse Crestron's SSH server.
+    stdin.close()
+    stdout.close()
+    stderr.close()
+    sys.exit(exit_code)
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     sys.exit(1)

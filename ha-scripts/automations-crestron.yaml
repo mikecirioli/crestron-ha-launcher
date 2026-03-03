@@ -1,0 +1,68 @@
+# ═══════════════════════════════════════════════════════════════════
+# Crestron Panel Automations
+# ═══════════════════════════════════════════════════════════════════
+# Add these to your automations.yaml or create via the HA UI.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── 1. Boot trigger: CH5 app fires webhook → open browser ────────
+# This is the original automation from the crestron-ha-launcher.
+# Update the BROWSEROPEN URL to point to the Crestron dashboard.
+- alias: "Crestron: Open browser on boot"
+  description: >-
+    When the panel boots, the CH5 app fires a webhook.
+    This automation SSHs into the panel and opens the browser
+    pointed at the Crestron dashboard.
+  triggers:
+    - trigger: webhook
+      webhook_id: crestron-open-browser
+  actions:
+    - action: shell_command.crestron_open_browser
+
+# ── 2. Periodic browser restart (memory cleanup) ─────────────────
+# Every 6 hours, fully restart the panel browser to clear any
+# accumulated memory. The browser reopens to the dashboard, and
+# idle detection will send it to the photo frame after 30s.
+- alias: "Crestron: Periodic browser restart"
+  description: >-
+    Restarts the Crestron panel browser every 6 hours to prevent
+    memory buildup from long-running camera streams and JS.
+  triggers:
+    - trigger: time_pattern
+      hours: "/6"
+  actions:
+    - action: shell_command.crestron_close_browser
+    - delay:
+        seconds: 5
+    - action: shell_command.crestron_open_browser
+
+# ── 3. Cycle cameras on the Crestron dashboard ──────────────────
+# Advances the camera selector every 15 seconds so the dashboard
+# shows a rotating view of all cameras.
+- alias: "Crestron: Cycle cameras"
+  description: >-
+    Cycles through security cameras every 15 seconds on the
+    Crestron panel dashboard.
+  triggers:
+    - trigger: time_pattern
+      seconds: "/15"
+  actions:
+    - action: input_select.select_next
+      target:
+        entity_id: input_select.camera_selector
+      data:
+        cycle: true
+
+# ── 4. Rebuild photo frame image list ────────────────────────────
+# Regenerates the JSON image list on HA startup and every hour,
+# so new photos added to /media/ciriolisaver/ appear automatically.
+- alias: "Crestron: Rebuild photo frame image list"
+  description: >-
+    Scans the media/ciriolisaver folder and generates the JSON
+    image list used by the photo frame slideshow.
+  triggers:
+    - trigger: homeassistant
+      event: startup
+    - trigger: time_pattern
+      hours: "/1"
+  actions:
+    - action: shell_command.photoframe_build_list
