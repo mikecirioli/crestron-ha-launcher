@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280,height=800,initial-scale=1,user-scalable=no">
+<title>Crestron Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #111318;
+    color: #e1e1e1;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    width: 1280px;
+    height: 800px;
+    overflow: hidden;
+  }
+
+  /* ── Master grid: 54 + 620 + 126 = 800 ───────────────── */
+  .dashboard {
+    display: grid;
+    grid-template-rows: 54px 620px 126px;
+    width: 1280px;
+    height: 800px;
+    overflow: hidden;
+  }
+
+  /* ── Chips bar (54px) ─────────────────────────────────── */
+  .chips {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    height: 54px;
+    overflow: hidden;
+  }
+
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.08);
+    font-size: 14px;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.2s;
+    height: 36px;
+  }
+  .chip:active { opacity: 0.6; }
+  .chip.off { opacity: 0.45; }
+  .chip .mdi { font-size: 20px; line-height: 1; }
+
+  /* ── Middle: camera (2fr) + info (1fr) = 620px ────────── */
+  .middle {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    height: 620px;
+    overflow: hidden;
+  }
+
+  /* ── Camera area ──────────────────────────────────────── */
+  .camera-area {
+    position: relative;
+    height: 620px;
+    overflow: hidden;
+    background: #000;
+  }
+  .camera-area img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .camera-label {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  /* ── Info column: 70 + 100 + remaining ────────────────── */
+  .info-column {
+    display: grid;
+    grid-template-rows: 70px 100px 1fr;
+    height: 620px;
+    overflow: hidden;
+    padding: 0 10px;
+  }
+
+  /* ── Clock ────────────────────────────────────────────── */
+  .clock-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .clock-time { font-size: 38px; font-weight: 300; line-height: 1.1; }
+  .clock-date { font-size: 14px; opacity: 0.65; margin-top: 2px; }
+
+  /* ── Weather ──────────────────────────────────────────── */
+  .weather-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    overflow: hidden;
+  }
+  .weather-current { font-size: 16px; }
+  .forecast-row { display: flex; gap: 20px; }
+  .forecast-day { text-align: center; font-size: 12px; opacity: 0.85; line-height: 1.4; }
+  .forecast-day .day-name { font-weight: 600; font-size: 13px; }
+  .forecast-day .day-hi { font-weight: 500; }
+  .forecast-day .day-lo { opacity: 0.55; }
+  .forecast-day .day-cond { font-size: 11px; opacity: 0.6; }
+
+  /* ── Calendar ─────────────────────────────────────────── */
+  .calendar-area {
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px 2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  .calendar-area::-webkit-scrollbar { width: 4px; }
+  .calendar-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+  .cal-day-header {
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.55;
+    margin: 8px 0 3px 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .cal-day-header:first-child { margin-top: 0; }
+  .cal-event {
+    padding: 4px 8px;
+    border-left: 3px solid;
+    margin-bottom: 3px;
+    border-radius: 0 4px 4px 0;
+    background: rgba(255,255,255,0.04);
+  }
+  .cal-time { font-size: 11px; opacity: 0.5; }
+  .cal-title { font-size: 13px; line-height: 1.3; }
+
+  /* ── Detection row (126px) ────────────────────────────── */
+  .detections {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    height: 126px;
+    overflow: hidden;
+  }
+  .det-card {
+    display: flex;
+    flex-direction: column;
+    height: 126px;
+    overflow: hidden;
+    background: #1a1a1a;
+    border-radius: 4px;
+  }
+  .det-img {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .det-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .det-info {
+    padding: 2px 6px 3px;
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .det-name { opacity: 0.8; }
+  .det-time { opacity: 0.45; font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="dashboard">
+  <div class="chips" id="chips"></div>
+  <div class="middle">
+    <div class="camera-area">
+      <img id="cam-img" alt="">
+      <div class="camera-label" id="cam-label"></div>
+    </div>
+    <div class="info-column">
+      <div class="clock-area">
+        <div class="clock-time" id="clock"></div>
+        <div class="clock-date" id="date"></div>
+      </div>
+      <div class="weather-area">
+        <div class="weather-current" id="weather"></div>
+        <div class="forecast-row" id="forecast"></div>
+      </div>
+      <div class="calendar-area" id="calendar"></div>
+    </div>
+  </div>
+  <div class="detections" id="detections"></div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── Configuration ────────────────────────────────────────
+  var CAMERAS = [
+    { entity: 'camera.frontporch', name: 'Front Porch' },
+    { entity: 'camera.driveway',   name: 'Driveway' },
+    { entity: 'camera.backyard',   name: 'Back Yard' },
+    { entity: 'camera.critter',    name: 'Critter' },
+    { entity: 'camera.armory',     name: 'Armory' },
+    { entity: 'camera.pancam',     name: 'Pan Cam' },
+    { entity: 'camera.gatetown',   name: 'Gatetown' }
+  ];
+
+  var DETECTIONS = [
+    { entity: 'image.frontporch_person', name: 'Front Porch Person' },
+    { entity: 'image.driveway_person',   name: 'Driveway Person' },
+    { entity: 'image.backyard_person',   name: 'Backyard Person' },
+    { entity: 'image.critter_person',    name: 'Critter Person' },
+    { entity: 'image.armory_person',     name: 'Armory Person' },
+    { entity: 'image.pancam_person',     name: 'Pan Cam Person' },
+    { entity: 'image.gatetown_person',   name: 'Gatetown Person' }
+  ];
+
+  var CALENDARS = [
+    'calendar.home',
+    'calendar.mikecirioli_gmail_com',
+    'calendar.birthdays',
+    'calendar.wcpss_24_25_trad_calendar',
+    'calendar.mcirioli_cloudbees_com',
+    'calendar.jenkins'
+  ];
+
+  var CHIPS_CONFIG = [
+    { entity: 'vacuum.sweeping_robot', icon: '\uD83E\uDD16', name: 'Roesy', action: 'more-info' },
+    { entity: 'light.ceiling_light_rgbcw_8f2721', icon: '\uD83D\uDCA1', name: 'Sink', action: 'toggle' },
+    { entity: 'switch.smart_plug_3', icon: '\uD83C\uDF32', name: 'Tree', action: 'toggle' },
+    { entity: 'switch.smart_plug', icon: '\u26F2', name: 'Fountain', action: 'toggle' },
+    { entity: 'switch.smart_plug_2', icon: '\uD83D\uDC1F', name: 'Pond', action: 'toggle' }
+  ];
+
+  var WEATHER_ENTITY = 'weather.forecast_home';
+  var CAMERA_CYCLE_MS   = 15000;
+  var SNAPSHOT_MS        = 2500;   // refresh camera snapshot
+  var DETECTION_MS       = 30000;
+  var CALENDAR_MS        = 300000; // 5 min
+  var FORECAST_DAYS      = 3;
+
+  // ── State ────────────────────────────────────────────────
+  var curCam = 0;
+  var hass = null;
+
+  // ── HA access ────────────────────────────────────────────
+  function getHass() {
+    try {
+      var ha = window.parent.document.querySelector('home-assistant');
+      return (ha && ha.hass) ? ha.hass : null;
+    } catch (e) { return null; }
+  }
+
+  function signPath(path, cb) {
+    if (!hass || !hass.connection) return cb(null);
+    hass.connection.sendMessagePromise({
+      type: 'auth/sign_path',
+      path: path,
+      expires: 300
+    }).then(function(r) { cb(r.path); })
+      .catch(function() { cb(null); });
+  }
+
+  // ── Camera ───────────────────────────────────────────────
+  var camImg   = document.getElementById('cam-img');
+  var camLabel = document.getElementById('cam-label');
+
+  function refreshSnapshot() {
+    var cam = CAMERAS[curCam];
+    camLabel.textContent = cam.name;
+    signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
+      if (url) camImg.src = url;
+    });
+  }
+
+  function cycleCamera() {
+    curCam = (curCam + 1) % CAMERAS.length;
+    refreshSnapshot();
+  }
+
+  // Sync with input_select changed by side buttons
+  function syncCameraSelector() {
+    if (!hass) return;
+    var s = hass.states['input_select.camera_selector'];
+    if (!s) return;
+    for (var i = 0; i < CAMERAS.length; i++) {
+      if (CAMERAS[i].entity === s.state && i !== curCam) {
+        curCam = i;
+        refreshSnapshot();
+        break;
+      }
+    }
+  }
+
+  // ── Clock ────────────────────────────────────────────────
+  function updateClock() {
+    var now = new Date();
+    document.getElementById('clock').textContent =
+      now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    document.getElementById('date').textContent =
+      now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  // ── Weather ──────────────────────────────────────────────
+  function fmt(s) {
+    return s.replace(/-/g, ' ').replace(/_/g, ' ')
+      .replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+  }
+
+  function updateWeather() {
+    if (!hass) return;
+    var e = hass.states[WEATHER_ENTITY];
+    if (!e) return;
+    var temp = Math.round(e.attributes.temperature);
+    var unit = e.attributes.temperature_unit || '\u00B0F';
+    document.getElementById('weather').textContent =
+      temp + unit + '  \u00B7  ' + fmt(e.state);
+  }
+
+  function subscribeForecast() {
+    if (!hass || !hass.connection) return;
+    try {
+      hass.connection.subscribeMessage(
+        function(msg) { if (msg && msg.forecast) renderForecast(msg.forecast); },
+        { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: WEATHER_ENTITY }
+      );
+    } catch (e) {
+      // Fallback for older HA
+      try {
+        var ent = hass.states[WEATHER_ENTITY];
+        if (ent && ent.attributes.forecast) renderForecast(ent.attributes.forecast);
+      } catch (e2) {}
+    }
+  }
+
+  function renderForecast(fc) {
+    var days = fc.slice(1, FORECAST_DAYS + 1);
+    var html = '';
+    for (var i = 0; i < days.length; i++) {
+      var d = days[i];
+      var hi = Math.round(d.temperature);
+      var lo = d.templow != null ? Math.round(d.templow) : '';
+      var name = new Date(d.datetime.split('T')[0] + 'T12:00:00')
+        .toLocaleDateString([], { weekday: 'short' });
+      var cond = fmt(d.condition);
+      html += '<div class="forecast-day">';
+      html += '<div class="day-name">' + name + '</div>';
+      html += '<div><span class="day-hi">' + hi + '\u00B0</span>';
+      if (lo !== '') html += ' <span class="day-lo">' + lo + '\u00B0</span>';
+      html += '</div>';
+      html += '<div class="day-cond">' + cond + '</div>';
+      html += '</div>';
+    }
+    document.getElementById('forecast').innerHTML = html;
+  }
+
+  // ── Calendar ─────────────────────────────────────────────
+  var CAL_COLORS = {};
+  var PALETTE = ['#4285f4','#ea4335','#fbbc04','#34a853','#ff6d01','#46bdc6'];
+  CALENDARS.forEach(function(c, i) { CAL_COLORS[c] = PALETTE[i % PALETTE.length]; });
+
+  function updateCalendar() {
+    if (!hass) return;
+    var now = new Date();
+    var start = now.toISOString();
+    var end = new Date(now.getTime() + 7 * 86400000).toISOString();
+    var all = [];
+    var pending = CALENDARS.length;
+
+    CALENDARS.forEach(function(cal) {
+      if (!hass.states[cal]) { if (--pending === 0) renderCalendar(all); return; }
+      var path = '/api/calendars/' + cal
+        + '?start=' + encodeURIComponent(start)
+        + '&end=' + encodeURIComponent(end);
+
+      signPath(path, function(signed) {
+        if (!signed) { if (--pending === 0) renderCalendar(all); return; }
+        fetch(signed).then(function(r) { return r.json(); })
+          .then(function(evts) {
+            evts.forEach(function(ev) { ev._cal = cal; });
+            all = all.concat(evts);
+          })
+          .catch(function() {})
+          .then(function() { if (--pending === 0) renderCalendar(all); });
+      });
+    });
+  }
+
+  function renderCalendar(events) {
+    events.sort(function(a, b) {
+      return (a.start.dateTime || a.start.date || '')
+        .localeCompare(b.start.dateTime || b.start.date || '');
+    });
+
+    var html = '';
+    var lastDay = '';
+
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      var s = ev.start.dateTime || ev.start.date;
+      var d = new Date(s);
+      var dayKey = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+      if (dayKey !== lastDay) {
+        html += '<div class="cal-day-header">' + dayKey + '</div>';
+        lastDay = dayKey;
+      }
+
+      var time = '';
+      if (ev.start.dateTime) {
+        time = new Date(ev.start.dateTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        if (ev.end && ev.end.dateTime) {
+          time += ' \u2013 ' + new Date(ev.end.dateTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+      } else {
+        time = 'All day';
+      }
+
+      var color = CAL_COLORS[ev._cal] || '#888';
+      html += '<div class="cal-event" style="border-left-color:' + color + '">';
+      html += '<div class="cal-time">' + time + '</div>';
+      html += '<div class="cal-title">' + (ev.summary || '(No title)') + '</div>';
+      html += '</div>';
+    }
+
+    if (!events.length) {
+      html = '<div style="opacity:0.4;text-align:center;padding:20px">No events this week</div>';
+    }
+
+    document.getElementById('calendar').innerHTML = html;
+  }
+
+  // ── Chips ────────────────────────────────────────────────
+  function renderChips() {
+    if (!hass) return;
+    var html = '';
+
+    for (var i = 0; i < CHIPS_CONFIG.length; i++) {
+      var c = CHIPS_CONFIG[i];
+      var st = hass.states[c.entity];
+      var isOn = st && st.state === 'on';
+      var label = c.name;
+
+      html += '<div class="chip' + (isOn ? '' : ' off') + '" '
+        + 'data-entity="' + c.entity + '" data-action="' + (c.action || '') + '">'
+        + '<span class="mdi">' + c.icon + '</span>'
+        + (label ? '<span>' + label + '</span>' : '')
+        + '</div>';
+    }
+
+    document.getElementById('chips').innerHTML = html;
+
+    // Click handlers
+    var chips = document.querySelectorAll('.chip[data-entity]');
+    for (var j = 0; j < chips.length; j++) {
+      chips[j].addEventListener('click', chipClick);
+    }
+  }
+
+  function chipClick() {
+    var entity = this.getAttribute('data-entity');
+    var action = this.getAttribute('data-action');
+    if (!hass || !entity) return;
+
+    if (action === 'toggle') {
+      hass.callService('homeassistant', 'toggle', { entity_id: entity });
+      setTimeout(function() { hass = getHass(); renderChips(); }, 1000);
+    } else if (action === 'more-info') {
+      try {
+        var ha = window.parent.document.querySelector('home-assistant');
+        var evt = new CustomEvent('hass-more-info', {
+          detail: { entityId: entity },
+          bubbles: true,
+          composed: true
+        });
+        ha.dispatchEvent(evt);
+      } catch (e) {}
+    }
+  }
+
+  // ── Detection thumbnails ─────────────────────────────────
+  // Tracks last_changed per entity to detect new events
+  var detLastChanged = {};
+
+  function formatDetTime(isoStr) {
+    if (!isoStr) return '';
+    var d = new Date(isoStr);
+    var now = new Date();
+    var diffMs = now - d;
+    var diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'Just now';
+    if (diffMin < 60) return diffMin + 'm ago';
+    var diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return diffHr + 'h ago';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function updateDetections() {
+    if (!hass) return;
+    var html = '';
+
+    for (var i = 0; i < DETECTIONS.length; i++) {
+      var det = DETECTIONS[i];
+      var st = hass.states[det.entity];
+      html += '<div class="det-card">';
+      html += '<div class="det-img">';
+      if (st && st.attributes.entity_picture) {
+        html += '<img data-pic="' + st.attributes.entity_picture + '" alt="">';
+        detLastChanged[det.entity] = st.last_changed;
+      }
+      html += '</div>';
+      html += '<div class="det-info">';
+      html += '<span class="det-name">' + det.name + '</span>';
+      if (st && st.last_changed) {
+        html += ' <span class="det-time">' + formatDetTime(st.last_changed) + '</span>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
+
+    document.getElementById('detections').innerHTML = html;
+
+    var imgs = document.querySelectorAll('#detections img[data-pic]');
+    for (var j = 0; j < imgs.length; j++) {
+      (function(img) {
+        var p = img.getAttribute('data-pic');
+        var sep = p.indexOf('?') > -1 ? '&' : '?';
+        signPath(p + sep + 't=' + Date.now(), function(url) {
+          if (url) img.src = url;
+        });
+      })(imgs[j]);
+    }
+  }
+
+  // Subscribe to state changes for instant detection updates
+  function subscribeDetections() {
+    if (!hass || !hass.connection) return;
+    try {
+      hass.connection.subscribeMessage(
+        function(msg) {
+          if (!msg || !msg.event || !msg.event.data) return;
+          var data = msg.event.data;
+          var entityId = data.entity_id;
+          // Check if this is one of our detection entities
+          for (var i = 0; i < DETECTIONS.length; i++) {
+            if (DETECTIONS[i].entity === entityId) {
+              var newState = data.new_state;
+              if (newState && newState.last_changed !== detLastChanged[entityId]) {
+                // New detection — refresh all thumbnails
+                hass = getHass();
+                updateDetections();
+              }
+              break;
+            }
+          }
+        },
+        { type: 'subscribe_events', event_type: 'state_changed' }
+      );
+    } catch (e) {}
+  }
+
+  // ── Init ─────────────────────────────────────────────────
+  function init() {
+    hass = getHass();
+    if (!hass) return;
+
+    updateClock();
+    refreshSnapshot();
+    renderChips();
+    updateWeather();
+    updateDetections();
+    updateCalendar();
+    setTimeout(subscribeForecast, 2000);
+    setTimeout(subscribeDetections, 2000);
+
+    // Periodic refreshes
+    setInterval(updateClock, 30000);
+    setInterval(refreshSnapshot, SNAPSHOT_MS);
+    setInterval(cycleCamera, CAMERA_CYCLE_MS);
+    setInterval(function() { hass = getHass(); syncCameraSelector(); }, 2000);
+    setInterval(function() { hass = getHass(); renderChips(); updateWeather(); }, 60000);
+    setInterval(function() { hass = getHass(); updateDetections(); }, DETECTION_MS);
+    setInterval(function() { hass = getHass(); updateCalendar(); }, CALENDAR_MS);
+  }
+
+  // Wait for parent HA to load
+  (function waitForHass() {
+    var ha;
+    try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+    if (ha && ha.hass) return init();
+    var n = 0;
+    var iv = setInterval(function() {
+      try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+      if (ha && ha.hass) { clearInterval(iv); init(); }
+      if (++n > 300) clearInterval(iv);
+    }, 100);
+  })();
+})();
+</script>
+</body>
+</html>
