@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Detection Strip</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111318;
+    color: #e1e1e1;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+    height: 120px;
+    max-height: 120px;
+    padding: 0;
+    overflow: hidden;
+  }
+  .det {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #1a1a1a;
+    border-radius: 3px;
+    height: 120px;
+    max-height: 120px;
+  }
+  .det-img {
+    flex: 1 1 auto;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .det-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .det-info {
+    flex: 0 0 16px;
+    padding: 1px 4px 2px;
+    font-size: 9px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(0,0,0,0.4);
+  }
+  .det-name { opacity: 0.85; }
+  .det-time { opacity: 0.45; }
+</style>
+</head>
+<body>
+<div class="strip" id="strip"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  var DETECTIONS = [
+    { entity: 'image.frontporch_person', name: 'Front Porch Person' },
+    { entity: 'image.driveway_person',   name: 'Driveway Person' },
+    { entity: 'image.backyard_person',   name: 'Backyard Person' },
+    { entity: 'image.critter_person',    name: 'Critter Person' },
+    { entity: 'image.armory_person',     name: 'Armory Person' },
+    { entity: 'image.pancam_person',     name: 'Pan Cam Person' },
+    { entity: 'image.gatetown_person',   name: 'Gatetown Person' }
+  ];
+
+  var POLL_MS = 30000;
+  var hass = null;
+  var lastChanged = {};
+
+  function getHass() {
+    try {
+      var ha = window.parent.document.querySelector('home-assistant');
+      return (ha && ha.hass) ? ha.hass : null;
+    } catch (e) { return null; }
+  }
+
+  function signPath(path, cb) {
+    if (!hass || !hass.connection) return cb(null);
+    hass.connection.sendMessagePromise({
+      type: 'auth/sign_path',
+      path: path,
+      expires: 300
+    }).then(function(r) { cb(r.path); })
+      .catch(function() { cb(null); });
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    var now = new Date();
+    var m = Math.floor((now - d) / 60000);
+    if (m < 1) return 'Just now';
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function render() {
+    hass = getHass();
+    if (!hass) return;
+
+    var el = document.getElementById('strip');
+    var html = '';
+
+    for (var i = 0; i < DETECTIONS.length; i++) {
+      var det = DETECTIONS[i];
+      var st = hass.states[det.entity];
+      html += '<div class="det">';
+      html += '<div class="det-img">';
+      if (st && st.attributes.entity_picture) {
+        html += '<img data-pic="' + st.attributes.entity_picture + '" alt="">';
+        lastChanged[det.entity] = st.last_changed;
+      }
+      html += '</div>';
+      html += '<div class="det-info">';
+      html += '<span class="det-name">' + det.name + '</span>';
+      if (st && st.last_changed) {
+        html += ' <span class="det-time">' + fmtTime(st.last_changed) + '</span>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+
+    // Sign and load images
+    var imgs = el.querySelectorAll('img[data-pic]');
+    for (var j = 0; j < imgs.length; j++) {
+      (function(img) {
+        var p = img.getAttribute('data-pic');
+        var sep = p.indexOf('?') > -1 ? '&' : '?';
+        signPath(p + sep + 't=' + Date.now(), function(url) {
+          if (url) img.src = url;
+        });
+      })(imgs[j]);
+    }
+  }
+
+  // Subscribe to state_changed for instant detection updates
+  function subscribe() {
+    if (!hass || !hass.connection) return;
+    try {
+      hass.connection.subscribeMessage(
+        function(msg) {
+          if (!msg || !msg.event || !msg.event.data) return;
+          var eid = msg.event.data.entity_id;
+          for (var i = 0; i < DETECTIONS.length; i++) {
+            if (DETECTIONS[i].entity === eid) {
+              var ns = msg.event.data.new_state;
+              if (ns && ns.last_changed !== lastChanged[eid]) {
+                render();
+              }
+              break;
+            }
+          }
+        },
+        { type: 'subscribe_events', event_type: 'state_changed' }
+      );
+    } catch (e) {}
+  }
+
+  function init() {
+    hass = getHass();
+    if (!hass) return;
+    render();
+    setTimeout(subscribe, 2000);
+    setInterval(render, POLL_MS);
+  }
+
+  (function wait() {
+    var ha;
+    try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+    if (ha && ha.hass) return init();
+    var n = 0;
+    var iv = setInterval(function() {
+      try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+      if (ha && ha.hass) { clearInterval(iv); init(); }
+      if (++n > 300) clearInterval(iv);
+    }, 100);
+  })();
+})();
+</script>
+</body>
+</html>

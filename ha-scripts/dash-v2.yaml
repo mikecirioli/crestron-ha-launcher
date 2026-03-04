@@ -1,0 +1,211 @@
+# ═══════════════════════════════════════════════════════════════════
+# Crestron Display Dashboard v2 (TSW-1060: 1280×800)
+# ═══════════════════════════════════════════════════════════════════
+# Hybrid approach:
+#   - HA native cards for interactive elements (chips, weather, calendar)
+#   - Iframe for camera panel (pixel-perfect, no layout shift)
+#   - Iframe for detection strip (pixel-perfect, live updates)
+#
+# Create as a new dashboard:
+#   Settings > Dashboards > Add Dashboard
+#   Name: "Crestron v2"  URL: "crestron-v2"  Mode: YAML
+#
+# Requires: mushroom, card-mod
+# Deploy to /config/www/: camera-panel.html, detection-strip.html
+# ═══════════════════════════════════════════════════════════════════
+
+wallpanel:
+  enabled: true
+  hide_toolbar: true
+  show_toolbar_on_hover: true
+  hide_sidebar: true
+  fullscreen: false
+  idle_time: 0
+
+title: Crestron v2
+views:
+  # ── View 1: Dashboard ──────────────────────────────────────────
+  - title: Home
+    path: home
+    type: panel
+    cards:
+      - type: vertical-stack
+        cards:
+          # ═══ ROW 1: Control chips ══════════════════════════════
+          - type: custom:mushroom-chips-card
+            chips:
+              - type: entity
+                entity: vacuum.sweeping_robot
+                icon: mdi:robot-vacuum
+                name: Roesy
+                tap_action:
+                  action: more-info
+              - type: entity
+                entity: light.ceiling_light_rgbcw_8f2721
+                icon: mdi:vanity-light
+                name: Sink
+                tap_action:
+                  action: toggle
+              - type: entity
+                entity: switch.smart_plug_3
+                icon: mdi:pine-tree
+                name: Tree
+                tap_action:
+                  action: toggle
+              - type: entity
+                entity: switch.smart_plug
+                icon: mdi:fountain
+                name: Fountain
+                tap_action:
+                  action: toggle
+              - type: entity
+                entity: switch.smart_plug_2
+                icon: mdi:fishbowl
+                name: Pond
+                tap_action:
+                  action: toggle
+            card_mod:
+              style: |
+                ha-card {
+                  padding: 6px 16px !important;
+                  --chip-spacing: 8px;
+                  --chip-font-size: 16px;
+                  --chip-icon-size: 24px;
+                  --chip-height: 40px;
+                  --chip-border-radius: 18px;
+                }
+
+          # ═══ ROW 2: Camera (iframe) + Info column ══════════════
+          - type: horizontal-stack
+            cards:
+              # ── Camera iframe (fixed size, no layout shift) ────
+              - type: iframe
+                url: /local/camera-panel.html
+                aspect_ratio: "4:3"
+                card_mod:
+                  style: |
+                    ha-card {
+                      border: none !important;
+                      box-shadow: none !important;
+                      border-radius: 0 !important;
+                      overflow: hidden !important;
+                    }
+
+              # ── Info column: weather + calendar ────────────────
+              - type: vertical-stack
+                cards:
+                  # ── Date & time ────────────────────────────────
+                  - type: markdown
+                    content: |
+                      <div style="text-align:center">
+                        <div style="font-size:38px; font-weight:300; line-height:1.1">
+                          {{ now().strftime('%-I:%M %p') }}
+                        </div>
+                        <div style="font-size:14px; opacity:0.7; margin-top:2px">
+                          {{ now().strftime('%A, %B %-d') }}
+                        </div>
+                      </div>
+                    card_mod:
+                      style: |
+                        ha-card {
+                          background: transparent !important;
+                          box-shadow: none !important;
+                          border: none !important;
+                          padding: 6px 0 !important;
+                        }
+
+                  # ── Current weather + forecast ─────────────────
+                  - type: weather-forecast
+                    entity: weather.forecast_home
+                    forecast_type: daily
+                    show_current: true
+                    show_forecast: true
+                    card_mod:
+                      style: |
+                        ha-card {
+                          background: transparent !important;
+                          box-shadow: none !important;
+                          border: none !important;
+                          padding: 0 8px !important;
+                          font-size: 12px;
+                        }
+
+                  # ── Calendar ───────────────────────────────────
+                  - type: calendar
+                    initial_view: listWeek
+                    entities:
+                      - calendar.home
+                      - calendar.mikecirioli_gmail_com
+                      - calendar.birthdays
+                      - calendar.wcpss_24_25_trad_calendar
+                      - calendar.mcirioli_cloudbees_com
+                      - calendar.jenkins
+                    card_mod:
+                      style:
+                        "ha-full-calendar$": |
+                          ha-fab,
+                          mwc-fab,
+                          ha-button-menu,
+                          .fab,
+                          [class*="addEvent"],
+                          .fc-addEvent-button {
+                            display: none !important;
+                            visibility: hidden !important;
+                            width: 0 !important;
+                            height: 0 !important;
+                            pointer-events: none !important;
+                          }
+                        "ha-full-calendar$ ha-fab": |
+                          :host {
+                            display: none !important;
+                          }
+                        "ha-full-calendar$ .header": |
+                          .navigation {
+                            display: none !important;
+                          }
+                        .: |
+                          :host {
+                            height: 400px !important;
+                            min-height: 400px !important;
+                            display: block !important;
+                          }
+                          ha-card {
+                            height: 400px !important;
+                            min-height: 400px !important;
+                            overflow: hidden !important;
+                            font-size: 13px;
+                          }
+
+          # ═══ ROW 3: Detection strip (iframe) ═══════════════════
+          - type: iframe
+            url: /local/detection-strip.html
+            aspect_ratio: "100:10"
+            card_mod:
+              style: |
+                ha-card {
+                  border: none !important;
+                  box-shadow: none !important;
+                  border-radius: 0 !important;
+                  overflow: hidden !important;
+                  max-height: 130px !important;
+                }
+
+  # ── View 2: Photo Frame ────────────────────────────────────────
+  - title: Photos
+    path: photos
+    type: panel
+    cards:
+      - type: iframe
+        url: /local/photoframe.html
+        aspect_ratio: "16:10"
+        card_mod:
+          style: |
+            ha-card {
+              height: 100vh !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+            }

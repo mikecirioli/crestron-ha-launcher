@@ -1,0 +1,293 @@
+# ═══════════════════════════════════════════════════════════════════
+# Crestron Display Dashboard v3 (TSW-1060: 1280×800)
+# ═══════════════════════════════════════════════════════════════════
+# Strategy: layout-card grid + card-mod on EVERY child
+#   - layout-card grid enforces row/column sizes at the view level
+#   - card-mod on each card enforces height + overflow:hidden so
+#     no card can escape its grid cell
+#   - Camera and detections use iframes (immune to layout shift)
+#   - Chips, weather, calendar use native HA cards (interactive)
+#
+# Grid budget: 54 + 620 + 126 = 800px
+# Columns: 2fr (camera) + 1fr (info)
+#
+# Requires HACS: layout-card, mushroom, card-mod
+# Deploy: camera-panel.html, detection-strip.html → /config/www/
+# ═══════════════════════════════════════════════════════════════════
+
+wallpanel:
+  enabled: true
+  hide_toolbar: true
+  show_toolbar_on_hover: true
+  hide_sidebar: true
+  fullscreen: false
+  idle_time: 0
+
+title: Crestron v3
+views:
+  # ── View 1: Dashboard ──────────────────────────────────────────
+  - title: Home
+    path: home
+    type: custom:grid-layout
+    layout:
+      grid-template-columns: 2fr 1fr
+      grid-template-rows: 54px 620px 126px
+      height: 800px
+      margin: 0
+      padding: 0
+      grid-gap: 0
+    cards:
+
+      # ═══ ROW 1: Chips bar (54px, spans both columns) ═══════════
+      - type: custom:mushroom-chips-card
+        view_layout:
+          grid-column: 1 / -1
+          grid-row: 1
+        chips:
+          - type: entity
+            entity: vacuum.sweeping_robot
+            icon: mdi:robot-vacuum
+            name: Roesy
+            tap_action:
+              action: more-info
+          - type: entity
+            entity: light.ceiling_light_rgbcw_8f2721
+            icon: mdi:vanity-light
+            name: Sink
+            tap_action:
+              action: toggle
+          - type: entity
+            entity: switch.smart_plug_3
+            icon: mdi:pine-tree
+            name: Tree
+            tap_action:
+              action: toggle
+          - type: entity
+            entity: switch.smart_plug
+            icon: mdi:fountain
+            name: Fountain
+            tap_action:
+              action: toggle
+          - type: entity
+            entity: switch.smart_plug_2
+            icon: mdi:fishbowl
+            name: Pond
+            tap_action:
+              action: toggle
+        card_mod:
+          style: |
+            :host {
+              height: 54px !important;
+              max-height: 54px !important;
+              overflow: hidden !important;
+            }
+            ha-card {
+              height: 54px !important;
+              max-height: 54px !important;
+              overflow: hidden !important;
+              padding: 6px 16px !important;
+              --chip-spacing: 8px;
+              --chip-font-size: 16px;
+              --chip-icon-size: 24px;
+              --chip-height: 40px;
+              --chip-border-radius: 18px;
+            }
+
+      # ═══ ROW 2, COL 1: Camera iframe (620px) ══════════════════
+      - type: iframe
+        url: /local/camera-panel.html
+        aspect_ratio: "4:3"
+        view_layout:
+          grid-column: 1
+          grid-row: 2
+        card_mod:
+          style: |
+            :host {
+              height: 620px !important;
+              max-height: 620px !important;
+              overflow: hidden !important;
+            }
+            ha-card {
+              height: 620px !important;
+              max-height: 620px !important;
+              overflow: hidden !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+            }
+            iframe {
+              height: 620px !important;
+            }
+
+      # ═══ ROW 2, COL 2: Info column (620px) ════════════════════
+      - type: vertical-stack
+        view_layout:
+          grid-column: 2
+          grid-row: 2
+        card_mod:
+          style: |
+            :host {
+              height: 620px !important;
+              max-height: 620px !important;
+              overflow: hidden !important;
+            }
+            #root {
+              height: 620px !important;
+              max-height: 620px !important;
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            #root > * {
+              margin-top: 0 !important;
+              margin-bottom: 0 !important;
+            }
+        cards:
+          # ── Clock (70px) ───────────────────────────────────────
+          - type: markdown
+            content: |
+              <div style="text-align:center">
+                <div style="font-size:38px; font-weight:300; line-height:1.1">
+                  {{ now().strftime('%-I:%M %p') }}
+                </div>
+                <div style="font-size:14px; opacity:0.7; margin-top:2px">
+                  {{ now().strftime('%A, %B %-d') }}
+                </div>
+              </div>
+            card_mod:
+              style: |
+                :host {
+                  height: 70px !important;
+                  max-height: 70px !important;
+                  overflow: hidden !important;
+                }
+                ha-card {
+                  height: 70px !important;
+                  max-height: 70px !important;
+                  overflow: hidden !important;
+                  background: transparent !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 6px 0 !important;
+                }
+
+          # ── Weather + forecast (110px) ─────────────────────────
+          - type: weather-forecast
+            entity: weather.forecast_home
+            forecast_type: daily
+            show_current: true
+            show_forecast: true
+            card_mod:
+              style: |
+                :host {
+                  height: 110px !important;
+                  max-height: 110px !important;
+                  overflow: hidden !important;
+                }
+                ha-card {
+                  height: 110px !important;
+                  max-height: 110px !important;
+                  overflow: hidden !important;
+                  background: transparent !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 8px !important;
+                  font-size: 12px;
+                }
+
+          # ── Calendar (440px = 620 - 70 - 110) ─────────────────
+          - type: calendar
+            initial_view: listWeek
+            entities:
+              - calendar.home
+              - calendar.mikecirioli_gmail_com
+              - calendar.birthdays
+              - calendar.wcpss_24_25_trad_calendar
+              - calendar.mcirioli_cloudbees_com
+              - calendar.jenkins
+            card_mod:
+              style:
+                "ha-full-calendar$": |
+                  ha-fab,
+                  mwc-fab,
+                  ha-button-menu,
+                  .fab,
+                  [class*="addEvent"],
+                  .fc-addEvent-button {
+                    display: none !important;
+                    visibility: hidden !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    pointer-events: none !important;
+                  }
+                "ha-full-calendar$ ha-fab": |
+                  :host {
+                    display: none !important;
+                  }
+                "ha-full-calendar$ .header": |
+                  .navigation {
+                    display: none !important;
+                  }
+                .: |
+                  :host {
+                    height: 440px !important;
+                    min-height: 440px !important;
+                    max-height: 440px !important;
+                    overflow: hidden !important;
+                    display: block !important;
+                  }
+                  ha-card {
+                    height: 440px !important;
+                    min-height: 440px !important;
+                    max-height: 440px !important;
+                    overflow: hidden !important;
+                    font-size: 13px;
+                  }
+
+      # ═══ ROW 3: Detection strip iframe (126px, spans both) ════
+      - type: iframe
+        url: /local/detection-strip.html
+        aspect_ratio: "100:10"
+        view_layout:
+          grid-column: 1 / -1
+          grid-row: 3
+        card_mod:
+          style: |
+            :host {
+              height: 126px !important;
+              max-height: 126px !important;
+              overflow: hidden !important;
+            }
+            ha-card {
+              height: 126px !important;
+              max-height: 126px !important;
+              overflow: hidden !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+            }
+            iframe {
+              height: 126px !important;
+            }
+
+  # ── View 2: Photo Frame ────────────────────────────────────────
+  - title: Photos
+    path: photos
+    type: panel
+    cards:
+      - type: iframe
+        url: /local/photoframe.html
+        aspect_ratio: "16:10"
+        card_mod:
+          style: |
+            ha-card {
+              height: 100vh !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+            }

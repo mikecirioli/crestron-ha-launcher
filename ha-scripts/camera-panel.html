@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Camera Panel</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+  }
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .label {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+</style>
+</head>
+<body>
+<img id="cam" alt="">
+<div class="label" id="label"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  var CAMERAS = [
+    { entity: 'camera.frontporch', name: 'Front Porch' },
+    { entity: 'camera.driveway',   name: 'Driveway' },
+    { entity: 'camera.backyard',   name: 'Back Yard' },
+    { entity: 'camera.critter',    name: 'Critter' },
+    { entity: 'camera.armory',     name: 'Armory' },
+    { entity: 'camera.pancam',     name: 'Pan Cam' },
+    { entity: 'camera.gatetown',   name: 'Gatetown' }
+  ];
+
+  var REFRESH_MS = 2500;
+  var SYNC_MS    = 1500;
+
+  var camImg   = document.getElementById('cam');
+  var camLabel = document.getElementById('label');
+  var curCam   = -1;
+  var hass     = null;
+
+  function getHass() {
+    try {
+      var ha = window.parent.document.querySelector('home-assistant');
+      return (ha && ha.hass) ? ha.hass : null;
+    } catch (e) { return null; }
+  }
+
+  function signPath(path, cb) {
+    if (!hass || !hass.connection) return cb(null);
+    hass.connection.sendMessagePromise({
+      type: 'auth/sign_path',
+      path: path,
+      expires: 300
+    }).then(function(r) { cb(r.path); })
+      .catch(function() { cb(null); });
+  }
+
+  function refreshSnapshot() {
+    if (curCam < 0 || curCam >= CAMERAS.length) return;
+    var cam = CAMERAS[curCam];
+    camLabel.textContent = cam.name;
+    signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
+      if (url) camImg.src = url;
+    });
+  }
+
+  function syncSelector() {
+    hass = getHass();
+    if (!hass) return;
+    var s = hass.states['input_select.camera_selector'];
+    if (!s) return;
+    for (var i = 0; i < CAMERAS.length; i++) {
+      if (CAMERAS[i].entity === s.state) {
+        if (i !== curCam) {
+          curCam = i;
+          refreshSnapshot();
+        }
+        return;
+      }
+    }
+  }
+
+  function init() {
+    hass = getHass();
+    if (!hass) return;
+    syncSelector();
+    setInterval(refreshSnapshot, REFRESH_MS);
+    setInterval(syncSelector, SYNC_MS);
+  }
+
+  // Wait for parent HA
+  (function wait() {
+    var ha;
+    try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+    if (ha && ha.hass) return init();
+    var n = 0;
+    var iv = setInterval(function() {
+      try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+      if (ha && ha.hass) { clearInterval(iv); init(); }
+      if (++n > 300) clearInterval(iv);
+    }, 100);
+  })();
+})();
+</script>
+</body>
+</html>

@@ -454,17 +454,42 @@
   }
 
   // ── Chips ────────────────────────────────────────────────
+  function entityIsActive(st) {
+    if (!st) return false;
+    var s = st.state;
+    // Covers: on, cleaning, running, open, unlocked, home, playing, etc.
+    return s !== 'off' && s !== 'unavailable' && s !== 'unknown'
+      && s !== 'idle' && s !== 'docked' && s !== 'standby'
+      && s !== 'closed' && s !== 'locked' && s !== 'not_home'
+      && s !== 'paused';
+  }
+
+  function chipStateLabel(c, st) {
+    if (!st) return c.name;
+    var domain = c.entity.split('.')[0];
+    // For vacuum, show friendly state
+    if (domain === 'vacuum') {
+      var vs = st.state;
+      if (vs === 'cleaning') return c.name + ' \u00B7 Cleaning';
+      if (vs === 'returning') return c.name + ' \u00B7 Returning';
+      if (vs === 'error') return c.name + ' \u00B7 Error';
+      return c.name;
+    }
+    return c.name;
+  }
+
   function renderChips() {
+    hass = getHass();
     if (!hass) return;
     var html = '';
 
     for (var i = 0; i < CHIPS_CONFIG.length; i++) {
       var c = CHIPS_CONFIG[i];
       var st = hass.states[c.entity];
-      var isOn = st && st.state === 'on';
-      var label = c.name;
+      var active = entityIsActive(st);
+      var label = chipStateLabel(c, st);
 
-      html += '<div class="chip' + (isOn ? '' : ' off') + '" '
+      html += '<div class="chip' + (active ? '' : ' off') + '" '
         + 'data-entity="' + c.entity + '" data-action="' + (c.action || '') + '">'
         + '<span class="mdi">' + c.icon + '</span>'
         + (label ? '<span>' + label + '</span>' : '')
@@ -481,24 +506,81 @@
   }
 
   function chipClick() {
-    var entity = this.getAttribute('data-entity');
-    var action = this.getAttribute('data-action');
+    var el = this;
+    var entity = el.getAttribute('data-entity');
+    var action = el.getAttribute('data-action');
     if (!hass || !entity) return;
 
+    // Visual feedback
+    el.style.opacity = '0.4';
+    setTimeout(function() { el.style.opacity = ''; }, 300);
+
     if (action === 'toggle') {
-      hass.callService('homeassistant', 'toggle', { entity_id: entity });
-      setTimeout(function() { hass = getHass(); renderChips(); }, 1000);
+      var domain = entity.split('.')[0];
+      // Use domain-specific service for reliability
+      if (domain === 'light') {
+        hass.callService('light', 'toggle', { entity_id: entity });
+      } else if (domain === 'switch') {
+        hass.callService('switch', 'toggle', { entity_id: entity });
+      } else {
+        hass.callService('homeassistant', 'toggle', { entity_id: entity });
+      }
     } else if (action === 'more-info') {
       try {
+        // Fire on the HA root element in parent frame
         var ha = window.parent.document.querySelector('home-assistant');
-        var evt = new CustomEvent('hass-more-info', {
-          detail: { entityId: entity },
-          bubbles: true,
-          composed: true
-        });
-        ha.dispatchEvent(evt);
-      } catch (e) {}
+        if (ha) {
+          ha.hass.callWS({ type: 'frontend/get_panels' }); // no-op, just verifies connection
+          // Use HA's built-in more-info mechanism
+          var root = ha.shadowRoot.querySelector('home-assistant-main');
+          if (root) {
+            root.dispatchEvent(new CustomEvent('hass-more-info', {
+              detail: { entityId: entity },
+              bubbles: true,
+              composed: true
+            }));
+          }
+        }
+      } catch (e) {
+        // Fallback: try on ha element directly
+        try {
+          window.parent.document.querySelector('home-assistant').dispatchEvent(
+            new CustomEvent('hass-more-info', {
+              detail: { entityId: entity },
+              bubbles: true,
+              composed: true
+            })
+          );
+        } catch (e2) {}
+      }
     }
+  }
+
+  // Subscribe to ALL state changes for real-time chip + weather updates
+  function subscribeStates() {
+    if (!hass || !hass.connection) return;
+    try {
+      hass.connection.subscribeMessage(
+        function(msg) {
+          if (!msg || !msg.event || !msg.event.data) return;
+          var eid = msg.event.data.entity_id;
+          // Update chips if it's a chip entity
+          for (var i = 0; i < CHIPS_CONFIG.length; i++) {
+            if (CHIPS_CONFIG[i].entity === eid) {
+              hass = getHass();
+              renderChips();
+              return;
+            }
+          }
+          // Update weather if it changed
+          if (eid === WEATHER_ENTITY) {
+            hass = getHass();
+            updateWeather();
+          }
+        },
+        { type: 'subscribe_events', event_type: 'state_changed' }
+      );
+    } catch (e) {}
   }
 
   // ── Detection thumbnails ─────────────────────────────────
@@ -595,12 +677,12 @@
     updateCalendar();
     setTimeout(subscribeForecast, 2000);
     setTimeout(subscribeDetections, 2000);
+    setTimeout(subscribeStates, 2000);
 
     // Periodic refreshes
     setInterval(updateClock, 30000);
     setInterval(refreshSnapshot, SNAPSHOT_MS);
     setInterval(function() { hass = getHass(); syncCameraSelector(); }, 2000);
-    setInterval(function() { hass = getHass(); renderChips(); updateWeather(); }, 60000);
     setInterval(function() { hass = getHass(); updateDetections(); }, DETECTION_MS);
     setInterval(function() { hass = getHass(); updateCalendar(); }, CALENDAR_MS);
   }

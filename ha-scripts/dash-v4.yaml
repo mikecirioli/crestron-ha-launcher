@@ -1,0 +1,245 @@
+# ═══════════════════════════════════════════════════════════════════
+# Crestron Display Dashboard v4 (TSW-1060: 1280×800)
+# ═══════════════════════════════════════════════════════════════════
+# v4.2:
+#   - Time chip in chips bar (no separate clock card)
+#   - Camera row fixed at 560px (not 1fr) to prevent stretching
+#   - Calendar iframe with dark bg, detection strip flex layout
+#   - Grid: 54 + 560 + 120 = 734px (fits browser; panel has margin)
+#   - 100vh with auto middle row fills viewport naturally
+#
+# Requires HACS: layout-card, mushroom, card-mod
+# Deploy to /config/www/:
+#   camera-panel.html, detection-strip.html, calendar-panel.html
+# ═══════════════════════════════════════════════════════════════════
+
+wallpanel:
+  enabled: true
+  hide_toolbar: true
+  show_toolbar_on_hover: true
+  hide_sidebar: true
+  fullscreen: false
+  idle_time: 0
+
+title: Crestron v4
+views:
+  # ── View 1: Dashboard ──────────────────────────────────────────
+  - title: Home
+    path: home
+    type: custom:grid-layout
+    layout:
+      grid-template-columns: 2fr 1fr
+      grid-template-rows: 54px 560px 120px
+      height: 100vh
+      margin: 0
+      padding: 0
+      grid-gap: 0
+    cards:
+
+      # ═══ ROW 1: Chips bar + time (54px, spans both columns) ═══
+      - type: custom:mushroom-chips-card
+        view_layout:
+          grid-column: 1 / -1
+          grid-row: 1
+        chips:
+          - type: template
+            icon: mdi:clock-outline
+            content: "{{ now().strftime('%-I:%M %p') }}"
+            tap_action:
+              action: none
+          - type: template
+            icon: mdi:calendar-today
+            content: "{{ now().strftime('%a, %b %-d') }}"
+            tap_action:
+              action: none
+          - type: spacer
+          - type: entity
+            entity: vacuum.sweeping_robot
+            icon: mdi:robot-vacuum
+            name: Roesy
+            tap_action:
+              action: more-info
+          - type: entity
+            entity: light.ceiling_light_rgbcw_8f2721
+            icon: mdi:vanity-light
+            name: Sink
+            tap_action:
+              action: toggle
+          - type: entity
+            entity: switch.smart_plug_3
+            icon: mdi:pine-tree
+            name: Tree
+            tap_action:
+              action: toggle
+          - type: entity
+            entity: switch.smart_plug
+            icon: mdi:fountain
+            name: Fountain
+            tap_action:
+              action: toggle
+          - type: entity
+            entity: switch.smart_plug_2
+            icon: mdi:fishbowl
+            name: Pond
+            tap_action:
+              action: toggle
+        card_mod:
+          style: |
+            :host {
+              height: 54px !important;
+              max-height: 54px !important;
+              overflow: hidden !important;
+            }
+            ha-card {
+              height: 54px !important;
+              max-height: 54px !important;
+              overflow: hidden !important;
+              padding: 6px 16px !important;
+              --chip-spacing: 8px;
+              --chip-font-size: 16px;
+              --chip-icon-size: 24px;
+              --chip-height: 40px;
+              --chip-border-radius: 18px;
+            }
+
+      # ═══ ROW 2, COL 1: Camera iframe ═════════════════════════
+      - type: iframe
+        url: /local/camera-panel.html?v=5
+        aspect_ratio: "4:3"
+        view_layout:
+          grid-column: 1
+          grid-row: 2
+        card_mod:
+          style: |
+            :host {
+              height: 100% !important;
+              overflow: hidden !important;
+            }
+            ha-card {
+              height: 100% !important;
+              overflow: hidden !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+            }
+            iframe {
+              height: 100% !important;
+            }
+
+      # ═══ ROW 2, COL 2: Info column ═══════════════════════════
+      - type: vertical-stack
+        view_layout:
+          grid-column: 2
+          grid-row: 2
+        card_mod:
+          style: |
+            :host {
+              height: 100% !important;
+              overflow: hidden !important;
+            }
+            #root {
+              height: 100% !important;
+              display: flex !important;
+              flex-direction: column !important;
+              overflow: hidden !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            #root > * {
+              margin-top: 0 !important;
+              margin-bottom: 0 !important;
+            }
+        cards:
+          # ── Weather + forecast (170px) ─────────────────────────
+          - type: weather-forecast
+            entity: weather.forecast_home
+            forecast_type: daily
+            show_current: true
+            show_forecast: true
+            card_mod:
+              style: |
+                :host {
+                  flex: 0 0 170px !important;
+                  overflow: hidden !important;
+                }
+                ha-card {
+                  height: 170px !important;
+                  max-height: 170px !important;
+                  overflow: hidden !important;
+                  background: transparent !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 8px !important;
+                  font-size: 12px;
+                }
+
+          # ── Calendar iframe (fills remaining space) ────────────
+          - type: iframe
+            url: /local/calendar-panel.html?v=4
+            aspect_ratio: "1:1"
+            card_mod:
+              style: |
+                :host {
+                  flex: 1 1 auto !important;
+                  min-height: 0 !important;
+                  overflow: hidden !important;
+                }
+                ha-card {
+                  height: 100% !important;
+                  overflow: hidden !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                  border-radius: 0 !important;
+                  padding: 0 !important;
+                }
+                iframe {
+                  height: 100% !important;
+                }
+
+      # ═══ ROW 3: Detection strip iframe (120px, spans both) ════
+      - type: iframe
+        url: /local/detection-strip.html?v=4
+        aspect_ratio: "100:10"
+        view_layout:
+          grid-column: 1 / -1
+          grid-row: 3
+        card_mod:
+          style: |
+            :host {
+              height: 120px !important;
+              max-height: 120px !important;
+              overflow: hidden !important;
+            }
+            ha-card {
+              height: 120px !important;
+              max-height: 120px !important;
+              overflow: hidden !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+            }
+            iframe {
+              height: 120px !important;
+            }
+
+  # ── View 2: Photo Frame ────────────────────────────────────────
+  - title: Photos
+    path: photos
+    type: panel
+    cards:
+      - type: iframe
+        url: /local/photoframe.html
+        aspect_ratio: "16:10"
+        card_mod:
+          style: |
+            ha-card {
+              height: 100vh !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+            }
