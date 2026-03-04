@@ -66,10 +66,11 @@
   function startIdleTimer() {
     clearTimeout(idleTimer);
     cancelRefresh();
-    idleTimer = setTimeout(function() {
-      navigateTo(PHOTOS_PATH);
-      scheduleRefresh();
-    }, IDLE_TIMEOUT);
+    // SOAK TEST: disabled idle→photos to isolate dashboard stability
+    // idleTimer = setTimeout(function() {
+    //   navigateTo(PHOTOS_PATH);
+    //   scheduleRefresh();
+    // }, IDLE_TIMEOUT);
   }
 
   // ── WebView memory management ──────────────────────────────────

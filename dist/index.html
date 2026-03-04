@@ -8,6 +8,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #111; color: #eee; font-family: sans-serif; padding: 30px; }
   h1 { color: #0af; font-size: 22px; margin-bottom: 6px; }
+  h2 { color: #0af; font-size: 16px; margin: 16px 0 8px 0; }
   .subtitle { color: #666; font-size: 13px; margin-bottom: 20px; }
   label { display: block; color: #aaa; font-size: 13px; margin-bottom: 4px; margin-top: 16px; }
   input { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #444; border-radius: 6px;
@@ -24,6 +25,22 @@
   .hint { color: #666; font-size: 12px; margin-top: 4px; }
   #resetBtn { background: none; border: 1px solid #444; color: #888; font-size: 12px;
               padding: 6px 12px; margin-top: 16px; cursor: pointer; }
+  #diagPanel { margin-top: 20px; border-top: 1px solid #333; padding-top: 16px; }
+  .diag-section { margin-bottom: 16px; }
+  .diag-section h2 { border-bottom: 1px solid #333; padding-bottom: 4px; }
+  .diag-table { width: 100%; font: 12px monospace; border-collapse: collapse; }
+  .diag-table td { padding: 3px 8px; border-bottom: 1px solid #222; vertical-align: top; }
+  .diag-table td:first-child { color: #888; white-space: nowrap; width: 160px; }
+  .diag-table td:last-child { word-break: break-all; }
+  .pass { color: #4f4; }
+  .fail { color: #f44; }
+  .warn-text { color: #fa0; }
+  .diag-ua { font: 11px monospace; color: #888; word-break: break-all; margin-top: 4px; }
+  #netResults { font: 12px monospace; margin-top: 8px; }
+  #netResults div { padding: 2px 0; }
+  #runNetBtn { background: #333; border: 1px solid #555; color: #ccc; font-size: 12px;
+               padding: 6px 12px; margin-top: 8px; cursor: pointer; }
+  #runNetBtn:active { background: #444; }
 </style>
 </head>
 <body>
@@ -33,7 +50,7 @@
   <div class="subtitle">Configure your Home Assistant connection</div>
 
   <label for="haUrl">Home Assistant URL</label>
-  <input id="haUrl" type="text" placeholder="http://192.168.1.100:8123" />
+  <input id="haUrl" type="text" placeholder="http://192.168.1.100:8123" value="http://192.168.1.245:8123" />
   <div class="hint">Include http:// and port number</div>
 
   <label for="webhookId">Webhook ID</label>
@@ -43,32 +60,113 @@
   <button id="saveBtn">Launch</button>
 </div>
 
+<!-- ── Diagnostics Panel (always visible) ────────────────────── -->
 <div id="status" style="display:none">
   <h1>HA Launcher</h1>
   <div id="log"></div>
   <button id="resetBtn">Reconfigure</button>
 </div>
 
+<!-- ── Diagnostics Panel (always visible) ────────────────────── -->
+<div id="diagPanel" style="max-width: 600px; margin: 20px auto; border-top: 1px solid #333; padding-top: 16px;">
+
+  <!-- Environment -->
+  <div class="diag-section">
+    <h2>Environment</h2>
+    <table class="diag-table" id="envTable"></table>
+    <div class="diag-ua" id="uaString"></div>
+  </div>
+
+  <!-- Storage Tests -->
+  <div class="diag-section">
+    <h2>Storage</h2>
+    <table class="diag-table" id="storageTable"></table>
+  </div>
+
+  <!-- Saved Config -->
+  <div class="diag-section">
+    <h2>Saved Config</h2>
+    <table class="diag-table" id="configTable"></table>
+  </div>
+
+  <!-- Network -->
+  <div class="diag-section">
+    <h2>Network</h2>
+    <button id="runNetBtn">Run Network Tests</button>
+    <div id="netResults"></div>
+  </div>
+
+  <!-- JS Capabilities -->
+  <div class="diag-section">
+    <h2>JS / API Support</h2>
+    <table class="diag-table" id="apiTable"></table>
+  </div>
+
+  <!-- Performance -->
+  <div class="diag-section">
+    <h2>Performance</h2>
+    <table class="diag-table" id="perfTable"></table>
+  </div>
+
+  <!-- Raw Cookies -->
+  <div class="diag-section">
+    <h2>Raw Cookie String</h2>
+    <div style="font: 11px monospace; color: #888; word-break: break-all; padding: 4px;"
+         id="rawCookies"></div>
+  </div>
+
+</div>
+
 <script>
-// === Cookie helpers ===
-function setCookie(name, value, days) {
-  var d = new Date();
-  d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
-  document.cookie = name + '=' + encodeURIComponent(value) + ';expires=' + d.toUTCString() + ';path=/';
+// === IndexedDB config storage ===
+// Only persistent storage that works on file:// in this WebView.
+var DB_NAME = 'ha_launcher';
+var DB_VERSION = 1;
+var STORE_NAME = 'config';
+
+function openDB(cb) {
+  var req = indexedDB.open(DB_NAME, DB_VERSION);
+  req.onupgradeneeded = function(e) {
+    var db = e.target.result;
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+    }
+  };
+  req.onsuccess = function(e) { cb(null, e.target.result); };
+  req.onerror = function() { cb(req.error); };
 }
 
-function getCookie(name) {
-  var prefix = name + '=';
-  var parts = document.cookie.split(';');
-  for (var i = 0; i < parts.length; i++) {
-    var c = parts[i].trim();
-    if (c.indexOf(prefix) === 0) return decodeURIComponent(c.substring(prefix.length));
-  }
-  return '';
+function idbPut(key, value, cb) {
+  openDB(function(err, db) {
+    if (err) return cb && cb(err);
+    var tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put({ key: key, value: value });
+    tx.oncomplete = function() { db.close(); cb && cb(null); };
+    tx.onerror = function() { db.close(); cb && cb(tx.error); };
+  });
 }
 
-function clearCookie(name) {
-  document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+function idbGet(key, cb) {
+  openDB(function(err, db) {
+    if (err) return cb(err);
+    var tx = db.transaction(STORE_NAME, 'readonly');
+    var req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = function() {
+      db.close();
+      cb(null, req.result ? req.result.value : undefined);
+    };
+    req.onerror = function() { db.close(); cb(req.error); };
+  });
+}
+
+function idbDelete(key, cb) {
+  openDB(function(err, db) {
+    if (err) return cb && cb(err);
+    var tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(key);
+    tx.oncomplete = function() { db.close(); cb && cb(null); };
+    tx.onerror = function() { db.close(); cb && cb(tx.error); };
+  });
 }
 
 // === Logging ===
@@ -80,17 +178,30 @@ function log(msg, cls) {
   logEl.appendChild(d);
 }
 
-// === Config ===
-function loadConfig() {
-  var url = getCookie('ha_url');
-  var webhook = getCookie('ha_webhook') || 'crestron-open-browser';
-  if (url) return { url: url, webhook: webhook };
-  return null;
+// === Config (async via IndexedDB) ===
+function loadConfig(cb) {
+  idbGet('ha_url', function(err, url) {
+    if (err || !url) return cb(null);
+    idbGet('ha_webhook', function(err2, webhook) {
+      cb({ url: url, webhook: webhook || 'crestron-open-browser' });
+    });
+  });
 }
 
-function saveConfig(url, webhook) {
-  setCookie('ha_url', url, 3650);
-  setCookie('ha_webhook', webhook, 3650);
+function saveConfig(url, webhook, cb) {
+  idbPut('ha_url', url, function() {
+    idbPut('ha_webhook', webhook, function() {
+      cb && cb();
+    });
+  });
+}
+
+function clearConfig(cb) {
+  idbDelete('ha_url', function() {
+    idbDelete('ha_webhook', function() {
+      cb && cb();
+    });
+  });
 }
 
 // === Webhook ===
@@ -122,10 +233,8 @@ var statusEl = document.getElementById('status');
 function showWizard(prefill) {
   wizardEl.style.display = 'block';
   statusEl.style.display = 'none';
-  if (prefill) {
-    document.getElementById('haUrl').value = prefill.url || '';
-    document.getElementById('webhookId').value = prefill.webhook || 'crestron-open-browser';
-  }
+  document.getElementById('haUrl').value = (prefill && prefill.url) || 'http://192.168.1.245:8123';
+  document.getElementById('webhookId').value = (prefill && prefill.webhook) || 'crestron-open-browser';
 }
 
 function showStatus(config) {
@@ -134,31 +243,409 @@ function showStatus(config) {
   log('Target: ' + config.url);
   log('Webhook: ' + config.webhook);
   fireWebhook(config);
+  runDiagnostics();
 }
 
 document.getElementById('saveBtn').addEventListener('click', function() {
   var url = document.getElementById('haUrl').value.trim().replace(/\/+$/, '');
   var webhook = document.getElementById('webhookId').value.trim() || 'crestron-open-browser';
   if (!url) { document.getElementById('haUrl').focus(); return; }
-  saveConfig(url, webhook);
-  showStatus({ url: url, webhook: webhook });
+  saveConfig(url, webhook, function() {
+    showStatus({ url: url, webhook: webhook });
+  });
 });
 
 document.getElementById('resetBtn').addEventListener('click', function() {
-  var config = loadConfig();
-  clearCookie('ha_url');
-  clearCookie('ha_webhook');
-  logEl.innerHTML = '';
-  showWizard(config);
+  // Grab current values to pre-fill wizard
+  loadConfig(function(config) {
+    clearConfig(function() {
+      logEl.innerHTML = '';
+      showWizard(config);
+    });
+  });
 });
 
-// === Boot ===
-var config = loadConfig();
-if (config) {
-  showStatus(config);
-} else {
-  showWizard();
+// ═══════════════════════════════════════════════════════════════
+// DIAGNOSTICS
+// ═══════════════════════════════════════════════════════════════
+
+// Diagnostics run automatically when status view is shown
+
+function addRow(tableId, label, value, cls) {
+  var tr = document.createElement('tr');
+  var td1 = document.createElement('td');
+  td1.textContent = label;
+  var td2 = document.createElement('td');
+  if (cls) td2.className = cls;
+  td2.textContent = value;
+  tr.appendChild(td1);
+  tr.appendChild(td2);
+  document.getElementById(tableId).appendChild(tr);
 }
+
+function clearTable(tableId) {
+  document.getElementById(tableId).innerHTML = '';
+}
+
+// ── Parse UA ───────────────────────────────────────────────────
+function parseUA() {
+  var ua = navigator.userAgent;
+  var info = {};
+
+  var chromeMatch = ua.match(/Chrome\/(\d+[\.\d]*)/);
+  info.chrome = chromeMatch ? chromeMatch[1] : 'unknown';
+
+  var androidMatch = ua.match(/Android\s+([\d\.]+)/);
+  info.android = androidMatch ? androidMatch[1] : 'N/A';
+
+  var webviewMatch = ua.match(/wv\b/) || ua.match(/WebView/i);
+  info.isWebView = !!webviewMatch;
+
+  var buildMatch = ua.match(/Build\/([^\s;\)]+)/);
+  info.build = buildMatch ? buildMatch[1] : 'unknown';
+
+  return info;
+}
+
+// ── Storage tests ──────────────────────────────────────────────
+function testLocalStorage() {
+  try {
+    var key = '__diag_ls_' + Date.now();
+    localStorage.setItem(key, 'test');
+    var val = localStorage.getItem(key);
+    localStorage.removeItem(key);
+    if (val === 'test') return { ok: true, msg: 'read/write OK' };
+    return { ok: false, msg: 'write OK but read returned: ' + JSON.stringify(val) };
+  } catch (e) {
+    return { ok: false, msg: e.name + ': ' + e.message };
+  }
+}
+
+function testSessionStorage() {
+  try {
+    var key = '__diag_ss_' + Date.now();
+    sessionStorage.setItem(key, 'test');
+    var val = sessionStorage.getItem(key);
+    sessionStorage.removeItem(key);
+    if (val === 'test') return { ok: true, msg: 'read/write OK' };
+    return { ok: false, msg: 'write OK but read returned: ' + JSON.stringify(val) };
+  } catch (e) {
+    return { ok: false, msg: e.name + ': ' + e.message };
+  }
+}
+
+function testCookies() {
+  try {
+    var key = '__diag_ck_' + Date.now();
+    document.cookie = key + '=test;path=/';
+    var found = document.cookie.indexOf(key + '=test') !== -1;
+    document.cookie = key + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+    if (found) return { ok: true, msg: 'read/write OK' };
+    return { ok: false, msg: 'cookie set but not readable' };
+  } catch (e) {
+    return { ok: false, msg: e.name + ': ' + e.message };
+  }
+}
+
+function testIndexedDB(cb) {
+  if (!window.indexedDB) return cb({ ok: false, msg: 'indexedDB not available' });
+  try {
+    var dbName = '__diag_idb_' + Date.now();
+    var req = indexedDB.open(dbName, 1);
+    req.onupgradeneeded = function(e) {
+      var db = e.target.result;
+      db.createObjectStore('test', { keyPath: 'id' });
+    };
+    req.onsuccess = function(e) {
+      var db = e.target.result;
+      try {
+        var tx = db.transaction('test', 'readwrite');
+        var store = tx.objectStore('test');
+        store.put({ id: 1, val: 'test' });
+        tx.oncomplete = function() {
+          // Read back
+          var tx2 = db.transaction('test', 'readonly');
+          var store2 = tx2.objectStore('test');
+          var getReq = store2.get(1);
+          getReq.onsuccess = function() {
+            db.close();
+            indexedDB.deleteDatabase(dbName);
+            if (getReq.result && getReq.result.val === 'test') {
+              cb({ ok: true, msg: 'read/write OK' });
+            } else {
+              cb({ ok: false, msg: 'write OK but read failed' });
+            }
+          };
+          getReq.onerror = function() {
+            db.close();
+            indexedDB.deleteDatabase(dbName);
+            cb({ ok: false, msg: 'read error' });
+          };
+        };
+        tx.onerror = function() {
+          db.close();
+          indexedDB.deleteDatabase(dbName);
+          cb({ ok: false, msg: 'write transaction error' });
+        };
+      } catch (ex) {
+        db.close();
+        indexedDB.deleteDatabase(dbName);
+        cb({ ok: false, msg: ex.name + ': ' + ex.message });
+      }
+    };
+    req.onerror = function() {
+      cb({ ok: false, msg: 'open error: ' + (req.error ? req.error.message : 'unknown') });
+    };
+    // Timeout in case it hangs
+    setTimeout(function() { cb({ ok: false, msg: 'timeout (3s)' }); }, 3000);
+  } catch (e) {
+    cb({ ok: false, msg: e.name + ': ' + e.message });
+  }
+}
+
+function testWebSQL() {
+  if (!window.openDatabase) return { ok: false, msg: 'openDatabase not available' };
+  try {
+    var db = openDatabase('__diag_wsql', '1.0', 'diag', 1024);
+    if (db) return { ok: true, msg: 'openDatabase OK (deprecated API)' };
+    return { ok: false, msg: 'openDatabase returned null' };
+  } catch (e) {
+    return { ok: false, msg: e.name + ': ' + e.message };
+  }
+}
+
+// ── localStorage persistence check ─────────────────────────────
+// Writes a marker and checks for one from a previous page load.
+// This lets you see across reboots whether localStorage persists.
+function testLocalStoragePersistence() {
+  var key = '__diag_persist';
+  try {
+    var prev = localStorage.getItem(key);
+    var now = new Date().toISOString();
+    localStorage.setItem(key, now);
+    if (prev) {
+      return { ok: true, msg: 'persisted since ' + prev };
+    } else {
+      return { ok: true, msg: 'marker set — check after reboot to confirm persistence' };
+    }
+  } catch (e) {
+    return { ok: false, msg: e.name + ': ' + e.message };
+  }
+}
+
+// ── Network tests ──────────────────────────────────────────────
+function runNetworkTests() {
+  var results = document.getElementById('netResults');
+  results.innerHTML = '<div style="color:#888">Running...</div>';
+
+  var config = loadConfig();
+  var baseUrl = config ? config.url : 'http://192.168.1.245:8123';
+
+  var tests = [
+    { name: 'HA root', url: baseUrl + '/', mode: 'no-cors' },
+    { name: 'HA API alive', url: baseUrl + '/api/', mode: 'cors' },
+    { name: 'Webhook endpoint', url: baseUrl + '/api/webhook/crestron-open-browser', method: 'POST', mode: 'no-cors' },
+    { name: 'HA static files', url: baseUrl + '/static/icons/favicon-192x192.png', mode: 'no-cors' }
+  ];
+
+  results.innerHTML = '';
+
+  tests.forEach(function(test) {
+    var div = document.createElement('div');
+    div.textContent = test.name + ': testing...';
+    div.style.color = '#888';
+    results.appendChild(div);
+
+    var start = Date.now();
+    var opts = { method: test.method || 'GET', mode: test.mode || 'no-cors' };
+
+    // Timeout via AbortController if available, otherwise race with setTimeout
+    var timeoutId;
+    var timedOut = false;
+
+    var fetchPromise = fetch(test.url, opts);
+    var timeoutPromise = new Promise(function(_, reject) {
+      timeoutId = setTimeout(function() {
+        timedOut = true;
+        reject(new Error('timeout'));
+      }, 8000);
+    });
+
+    Promise.race([fetchPromise, timeoutPromise])
+      .then(function(resp) {
+        clearTimeout(timeoutId);
+        var ms = Date.now() - start;
+        var status = resp.type === 'opaque' ? 'OK (opaque/no-cors)' : resp.status + ' ' + resp.statusText;
+        div.textContent = test.name + ': ' + status + ' (' + ms + 'ms)';
+        div.style.color = '#4f4';
+      })
+      .catch(function(e) {
+        clearTimeout(timeoutId);
+        var ms = Date.now() - start;
+        div.textContent = test.name + ': FAIL — ' + e.message + ' (' + ms + 'ms)';
+        div.style.color = '#f44';
+      });
+  });
+}
+
+// ── JS/API capability detection ────────────────────────────────
+function detectAPIs() {
+  var apis = [
+    ['fetch',                typeof fetch === 'function'],
+    ['Promise',              typeof Promise === 'function'],
+    ['AbortController',      typeof AbortController === 'function'],
+    ['WebSocket',            typeof WebSocket === 'function'],
+    ['Service Worker',       'serviceWorker' in navigator],
+    ['Web Workers',          typeof Worker === 'function'],
+    ['requestAnimationFrame', typeof requestAnimationFrame === 'function'],
+    ['IntersectionObserver', typeof IntersectionObserver === 'function'],
+    ['MutationObserver',     typeof MutationObserver === 'function'],
+    ['CSS Animations',       'animation' in document.body.style || 'webkitAnimation' in document.body.style],
+    ['CSS backdrop-filter',  'backdropFilter' in document.body.style || 'webkitBackdropFilter' in document.body.style],
+    ['CSS Grid',             'grid' in document.body.style],
+    ['CSS Flexbox',          'flex' in document.body.style],
+    ['Canvas 2D',            (function() { try { return !!document.createElement('canvas').getContext('2d'); } catch(e) { return false; } })()],
+    ['WebGL',                (function() { try { return !!document.createElement('canvas').getContext('webgl'); } catch(e) { return false; } })()],
+    ['touch events',         'ontouchstart' in window],
+    ['pointer events',       'onpointerdown' in window],
+    ['Geolocation',          'geolocation' in navigator],
+    ['devicePixelRatio',     typeof devicePixelRatio === 'number'],
+    ['performance.memory',   !!(window.performance && window.performance.memory)],
+    ['performance.timing',   !!(window.performance && window.performance.timing)]
+  ];
+  return apis;
+}
+
+// ── Performance info ───────────────────────────────────────────
+function getPerformanceInfo() {
+  var info = [];
+
+  // Page load time
+  if (window.performance && window.performance.timing) {
+    var t = performance.timing;
+    if (t.loadEventEnd && t.navigationStart) {
+      info.push(['Page load', (t.loadEventEnd - t.navigationStart) + 'ms']);
+    }
+    if (t.domContentLoadedEventEnd && t.navigationStart) {
+      info.push(['DOM ready', (t.domContentLoadedEventEnd - t.navigationStart) + 'ms']);
+    }
+    if (t.responseEnd && t.requestStart) {
+      info.push(['Network latency', (t.responseEnd - t.requestStart) + 'ms']);
+    }
+  }
+
+  // JS heap (Chrome only)
+  if (window.performance && window.performance.memory) {
+    var mem = performance.memory;
+    var used = (mem.usedJSHeapSize / 1048576).toFixed(1);
+    var total = (mem.totalJSHeapSize / 1048576).toFixed(1);
+    var limit = (mem.jsHeapSizeLimit / 1048576).toFixed(0);
+    info.push(['JS heap used', used + ' MB']);
+    info.push(['JS heap total', total + ' MB']);
+    info.push(['JS heap limit', limit + ' MB']);
+  }
+
+  // Uptime (since this page loaded)
+  info.push(['Page age', formatUptime(Date.now() - (window.__diagBootTime || Date.now()))]);
+
+  return info;
+}
+
+function formatUptime(ms) {
+  var s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  var m = Math.floor(s / 60);
+  s = s % 60;
+  if (m < 60) return m + 'm ' + s + 's';
+  var h = Math.floor(m / 60);
+  m = m % 60;
+  return h + 'h ' + m + 'm';
+}
+
+window.__diagBootTime = Date.now();
+
+// ── Run all diagnostics ────────────────────────────────────────
+function runDiagnostics() {
+  var ua = parseUA();
+
+  // Environment
+  clearTable('envTable');
+  addRow('envTable', 'Chromium', ua.chrome);
+  addRow('envTable', 'Android', ua.android);
+  addRow('envTable', 'WebView', ua.isWebView ? 'Yes' : 'No');
+  addRow('envTable', 'Build', ua.build);
+  addRow('envTable', 'Screen', screen.width + 'x' + screen.height);
+  addRow('envTable', 'Viewport', window.innerWidth + 'x' + window.innerHeight);
+  addRow('envTable', 'Device pixel ratio', (window.devicePixelRatio || 1).toFixed(1));
+  addRow('envTable', 'Color depth', screen.colorDepth + '-bit');
+  addRow('envTable', 'Online', navigator.onLine ? 'Yes' : 'No', navigator.onLine ? 'pass' : 'fail');
+  addRow('envTable', 'Language', navigator.language || 'unknown');
+  addRow('envTable', 'Cores (hint)', navigator.hardwareConcurrency || 'unknown');
+  addRow('envTable', 'Platform', navigator.platform || 'unknown');
+  addRow('envTable', 'Current URL', location.href);
+  document.getElementById('uaString').textContent = 'UA: ' + navigator.userAgent;
+
+  // Storage
+  clearTable('storageTable');
+  var ls = testLocalStorage();
+  addRow('storageTable', 'localStorage', ls.msg, ls.ok ? 'pass' : 'fail');
+  var ss = testSessionStorage();
+  addRow('storageTable', 'sessionStorage', ss.msg, ss.ok ? 'pass' : 'fail');
+  var ck = testCookies();
+  addRow('storageTable', 'Cookies', ck.msg, ck.ok ? 'pass' : 'fail');
+  var ws = testWebSQL();
+  addRow('storageTable', 'WebSQL', ws.msg, ws.ok ? 'pass' : 'fail');
+  var lp = testLocalStoragePersistence();
+  addRow('storageTable', 'localStorage persist', lp.msg, lp.ok ? 'pass' : 'warn-text');
+
+  // IndexedDB is async
+  testIndexedDB(function(idb) {
+    addRow('storageTable', 'IndexedDB', idb.msg, idb.ok ? 'pass' : 'fail');
+  });
+
+  // Saved Config (async — reads from IndexedDB)
+  clearTable('configTable');
+  addRow('configTable', 'Storage backend', 'IndexedDB', 'pass');
+  loadConfig(function(cfg) {
+    if (cfg) {
+      addRow('configTable', 'ha_url', cfg.url, 'pass');
+      addRow('configTable', 'ha_webhook', cfg.webhook, 'pass');
+    } else {
+      addRow('configTable', 'ha_url', '(not set)', 'fail');
+      addRow('configTable', 'ha_webhook', '(not set)', 'warn-text');
+    }
+  });
+
+  // Raw cookies (kept for debugging)
+  document.getElementById('rawCookies').textContent = document.cookie || '(empty)';
+
+  // JS/API Support
+  clearTable('apiTable');
+  var apis = detectAPIs();
+  for (var i = 0; i < apis.length; i++) {
+    addRow('apiTable', apis[i][0], apis[i][1] ? 'Yes' : 'No', apis[i][1] ? 'pass' : 'fail');
+  }
+
+  // Performance
+  clearTable('perfTable');
+  var perf = getPerformanceInfo();
+  for (var j = 0; j < perf.length; j++) {
+    addRow('perfTable', perf[j][0], perf[j][1]);
+  }
+}
+
+// Network test button
+document.getElementById('runNetBtn').addEventListener('click', runNetworkTests);
+
+// === Boot ===
+runDiagnostics();
+loadConfig(function(config) {
+  if (config) {
+    showStatus(config);
+  } else {
+    showWizard();
+  }
+});
 </script>
 </body>
 </html>

@@ -338,8 +338,10 @@ views:
                   #     - sensor.packages_in_transit
                   #     - sensor.packages_delivered
 
-                  # ── Recent detections (all cameras) ─────────────
-                  - type: custom:advanced-camera-card
+                  # ── Recent snapshots (4 key cameras) ────────────
+                  - type: grid
+                    columns: 2
+                    square: false
                     card_mod:
                       style: |
                         :host {
@@ -348,45 +350,51 @@ views:
                           flex-shrink: 1 !important;
                           min-height: 0 !important;
                         }
-                        ha-card {
-                          max-height: 270px !important;
-                          height: 100% !important;
-                          overflow: hidden !important;
+                        div {
+                          gap: 4px !important;
                         }
-                    view:
-                      default: snapshots
-                    cameras:
-                      - camera_entity: camera.frontporch
-                        frigate:
-                          camera_name: frontPorch
-                        dependencies:
-                          all_cameras: true
-                      - camera_entity: camera.driveway
-                        frigate:
-                          camera_name: driveway
-                      - camera_entity: camera.backyard
-                        frigate:
-                          camera_name: backYard
-                      - camera_entity: camera.critter
-                        frigate:
-                          camera_name: critter
-                      - camera_entity: camera.armory
-                        frigate:
-                          camera_name: armory
-                      - camera_entity: camera.pancam
-                        frigate:
-                          camera_name: panCam
-                      - camera_entity: camera.gatetown
-                        frigate:
-                          camera_name: gatetown
-                    menu:
-                      mode: none
-                    performance:
-                      features:
-                        animated_progress_indicator: false
-                      style:
-                        border_radius: true
-                        box_shadow: true
+                    cards:
+                      - type: picture-entity
+                        entity: camera.frontporch
+                        name: Porch
+                        camera_view: auto
+                        show_state: false
+                        card_mod:
+                          style: &snap-style |
+                            ha-card {
+                              height: 130px !important;
+                              overflow: hidden !important;
+                            }
+                            img {
+                              width: 100% !important;
+                              height: 100% !important;
+                              object-fit: cover !important;
+                            }
+                            .footer {
+                              font-size: 10px !important;
+                              padding: 2px 4px !important;
+                            }
+                      - type: picture-entity
+                        entity: camera.driveway
+                        name: Drive
+                        camera_view: auto
+                        show_state: false
+                        card_mod:
+                          style: *snap-style
+                      - type: picture-entity
+                        entity: camera.critter
+                        name: Critter
+                        camera_view: auto
+                        show_state: false
+                        card_mod:
+                          style: *snap-style
+                      - type: picture-entity
+                        entity: camera.gatetown
+                        name: Gate
+                        camera_view: auto
+                        show_state: false
+                        card_mod:
+                          style: *snap-style
 
   # ── View 2: Photo Frame ────────────────────────────────────────
   # Full-screen iframe to a self-contained slideshow page.
