@@ -588,7 +588,7 @@
     if (!hass) return;
 
     updateClock();
-    refreshSnapshot();
+    syncCameraSelector();
     renderChips();
     updateWeather();
     updateDetections();
@@ -599,7 +599,6 @@
     // Periodic refreshes
     setInterval(updateClock, 30000);
     setInterval(refreshSnapshot, SNAPSHOT_MS);
-    setInterval(cycleCamera, CAMERA_CYCLE_MS);
     setInterval(function() { hass = getHass(); syncCameraSelector(); }, 2000);
     setInterval(function() { hass = getHass(); renderChips(); updateWeather(); }, 60000);
     setInterval(function() { hass = getHass(); updateDetections(); }, DETECTION_MS);

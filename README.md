@@ -369,10 +369,6 @@ These can be run anytime via `crestron_cmd.py` to check panel health:
 - Verify the cycling automation is enabled (**Settings > Automations**)
 - Check that the dashboard YAML has conditional cards matching the input_select states
 
-## Known Issues
-
-- **Camera sequence glitch during soak test:** The camera sequence occasionally updates oddly, such as showing "critter", quickly flashing to another camera, and then showing "critter" again. This is a known rendering or timing quirk currently under investigation.
-
 ## License
 
 MIT
