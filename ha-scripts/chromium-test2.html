@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Chromium Test 2</title></head>
+<body style="background:#000;color:#0f0;font:16px monospace;padding:20px">
+<div id="out">HTML loaded.</div>
+<script>
+// Phase 1: basic JS
+document.getElementById('out').textContent += '\nJS executing...';
+
+// Phase 2: URLSearchParams
+try {
+  var _p = new URLSearchParams(location.search);
+  document.getElementById('out').textContent += '\nURLSearchParams: OK';
+} catch(e) {
+  document.getElementById('out').textContent += '\nURLSearchParams: FAIL ' + e.message;
+}
+
+// Phase 3: WebSocket constructor (don't actually connect)
+try {
+  var wsUrl = 'ws://' + location.hostname + ':8123/api/websocket';
+  document.getElementById('out').textContent += '\nWebSocket URL: ' + wsUrl;
+  var _ws = new WebSocket(wsUrl);
+  _ws.onopen = function() {
+    document.getElementById('out').textContent += '\nWS onopen!';
+    _ws.close();
+  };
+  _ws.onerror = function() {
+    document.getElementById('out').textContent += '\nWS onerror (expected - no auth)';
+  };
+  _ws.onclose = function(e) {
+    document.getElementById('out').textContent += '\nWS closed: code=' + e.code;
+  };
+} catch(e) {
+  document.getElementById('out').textContent += '\nWebSocket: FAIL ' + e.message;
+}
+
+// Phase 4: addEventListener with options object
+try {
+  document.addEventListener('touchstart', function(){}, { capture: true, passive: true });
+  document.getElementById('out').textContent += '\naddEventListener options: OK';
+} catch(e) {
+  document.getElementById('out').textContent += '\naddEventListener options: FAIL ' + e.message;
+}
+
+// Phase 5: Array.forEach
+try {
+  ['a','b'].forEach(function(x){});
+  document.getElementById('out').textContent += '\nforEach: OK';
+} catch(e) {
+  document.getElementById('out').textContent += '\nforEach: FAIL ' + e.message;
+}
+
+// Phase 6: performance.memory
+try {
+  if (performance && performance.memory) {
+    document.getElementById('out').textContent += '\nHeap: ' + (performance.memory.usedJSHeapSize/1048576).toFixed(1) + 'MB';
+  } else {
+    document.getElementById('out').textContent += '\nperformance.memory: not available';
+  }
+} catch(e) {
+  document.getElementById('out').textContent += '\nperformance.memory: FAIL ' + e.message;
+}
+
+// Phase 7: Image constructor
+try {
+  var img = new Image();
+  img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+  document.getElementById('out').textContent += '\nImage constructor: OK';
+} catch(e) {
+  document.getElementById('out').textContent += '\nImage: FAIL ' + e.message;
+}
+
+// Phase 8: fetch
+try {
+  if (typeof fetch === 'function') {
+    document.getElementById('out').textContent += '\nfetch: available';
+  } else {
+    document.getElementById('out').textContent += '\nfetch: NOT available';
+  }
+} catch(e) {
+  document.getElementById('out').textContent += '\nfetch: FAIL ' + e.message;
+}
+
+document.getElementById('out').textContent += '\n\nAll checks done.';
+</script>
+</body>
+</html>

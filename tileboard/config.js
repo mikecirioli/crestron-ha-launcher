@@ -22,7 +22,7 @@ var CONFIG = {
    tileMargin: 8,
    serverUrl: HA_URL,
    wsUrl: 'ws://192.168.1.245:8123/api/websocket',
-   authToken: 'REDACTED_TOKEN',
+   authToken: '',  // Set via deployment, not committed
 
    screensaver: {
       timeout: 30, // Activates after 30 seconds

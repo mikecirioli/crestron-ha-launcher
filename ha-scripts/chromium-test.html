@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Chromium Test</title></head>
+<body style="background:#000;color:#0f0;font:24px monospace;padding:40px">
+<div id="out">Page loaded.</div>
+<script>
+var el = document.getElementById('out');
+function log(msg) { el.textContent += '\n' + msg; }
+log('UA: ' + navigator.userAgent);
+log('URL: ' + location.href);
+log('Protocol: ' + location.protocol);
+log('WebSocket: ' + typeof WebSocket);
+log('Screen: ' + screen.width + 'x' + screen.height);
+log('Time: ' + new Date().toLocaleTimeString());
+</script>
+</body>
+</html>
