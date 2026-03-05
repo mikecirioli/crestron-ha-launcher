@@ -24,7 +24,7 @@ views:
     type: panel
     cards:
       - type: iframe
-        url: /local/panel-lite.html?reload=300
+        url: /local/panel-lite.html
         aspect_ratio: "16:10"
         card_mod:
           style: |

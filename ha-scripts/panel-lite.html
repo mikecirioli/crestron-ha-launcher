@@ -298,6 +298,15 @@
   .ss-fc-day .ss-fc-hi { font-weight: 500; }
   .ss-fc-day .ss-fc-lo { opacity: 0.6; }
   .ss-fc-day .ss-fc-cond { font-size: 11px; opacity: 0.7; }
+  .ss-debug {
+    margin-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    padding-top: 4px;
+    font-size: 10px;
+    font-family: monospace;
+    opacity: 0.45;
+    line-height: 1.3;
+  }
 </style>
 </head>
 <body>
@@ -324,6 +333,7 @@
       <div class="ss-date" id="ss-date"></div>
       <div class="ss-weather" id="ss-weather"></div>
       <div class="ss-forecast" id="ss-forecast"></div>
+      <div class="ss-debug" id="ss-debug"></div>
     </div>
   </div>
 
@@ -380,12 +390,16 @@
   var CAM_SYNC_MS       = 1500;   // sync camera selector
   var CALENDAR_MS       = 300000; // calendar refresh (5 min)
   var WEATHER_MS        = 300000; // weather refresh (5 min)
-  var DETECT_MS         = 30000;  // detection strip refresh (30s)
+  var DETECT_SLOTS      = 7;      // max detection thumbnails in strip
   var PHOTO_MS          = 30000;  // screensaver photo interval (30s)
   var PHOTO_LIST_MS     = 3600000;// photo list refresh (1 hr)
   var IDLE_TIMEOUT      = 120000; // 2 min → screensaver
   var SS_DRIFT_MS       = 120000; // reposition overlay (2 min)
   var FORECAST_DAYS     = 3;
+
+  // 1x1 transparent GIF — forces Chromium 95 to actually free decoded bitmap
+  // (img.src = '' does NOT release GPU memory in this WebView version)
+  var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 
   // Opt-in periodic reload for memory management
   var reloadParam = (new URLSearchParams(location.search)).get('reload');
@@ -640,19 +654,33 @@
     }
   }
 
+  var camPending = false; // guard against overlapping fetches
+
   function refreshCamera() {
     if (curCam < 0 || curCam >= CAMERAS.length) return;
+    if (camPending) return; // skip if previous fetch still in flight
+    camPending = true;
     var cam = CAMERAS[curCam];
     camLabel.textContent = cam.name;
     signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
-      if (!url) return;
+      if (!url) { camPending = false; return; }
       var tmp = new Image();
       tmp.onload = function() {
-        camImg.src = '';
-        camImg.src = url;
+        camImg.src = BLANK;   // release old decoded bitmap
+        camImg.src = url;  // swap to preloaded (from cache)
+        tmp.onload = null; // break closure reference
+        tmp.onerror = null;
+        tmp.src = BLANK;      // release temp bitmap
         tmp = null;
+        camPending = false;
       };
-      tmp.onerror = function() { tmp = null; };
+      tmp.onerror = function() {
+        tmp.onload = null;
+        tmp.onerror = null;
+        tmp.src = BLANK;
+        tmp = null;
+        camPending = false;
+      };
       tmp.src = url;
     });
   }
@@ -804,37 +832,64 @@
   }
 
   // ══════════════════════════════════════════════════════════
-  // DASHBOARD: DETECTION STRIP
+  // DASHBOARD: DETECTION STRIP (event-driven FIFO)
   // ══════════════════════════════════════════════════════════
 
-  function renderDetections() {
-    hass = getHass();
-    if (!hass) return;
+  // Build a lookup set for fast entity matching in the event callback
+  var DETECT_ENTITIES = {};
+  for (var di = 0; di < DETECTIONS.length; di++) {
+    DETECT_ENTITIES[DETECTIONS[di].entity] = DETECTIONS[di].name;
+  }
 
-    var el = document.getElementById('detection-strip');
-    var html = '';
+  // FIFO queue: newest at index 0, max DETECT_SLOTS entries
+  var detectionQueue = [];
+  var detectionSubscribed = false;
 
-    for (var i = 0; i < DETECTIONS.length; i++) {
-      var det = DETECTIONS[i];
-      var st = hass.states[det.entity];
-      html += '<div class="det">';
-      html += '<div class="det-img">';
-      if (st && st.attributes.entity_picture) {
-        html += '<img data-pic="' + st.attributes.entity_picture + '" alt="">';
-      }
-      html += '</div>';
-      html += '<div class="det-info">';
-      html += '<span class="det-name">' + det.name + '</span>';
-      if (st && st.last_changed) {
-        html += ' <span class="det-time">' + fmtTime(st.last_changed) + '</span>';
-      }
-      html += '</div>';
-      html += '</div>';
+  function addDetection(entityId, name, picture, changedAt) {
+    // Add to front of queue
+    detectionQueue.unshift({
+      entity: entityId,
+      name: name,
+      picture: picture,
+      time: changedAt
+    });
+    // Trim to max slots
+    if (detectionQueue.length > DETECT_SLOTS) {
+      detectionQueue.length = DETECT_SLOTS;
     }
+    renderDetectionStrip();
+  }
+
+  function renderDetectionStrip() {
+    var el = document.getElementById('detection-strip');
 
     // Release old images before replacing
     var oldImgs = el.querySelectorAll('img');
-    for (var k = 0; k < oldImgs.length; k++) oldImgs[k].src = '';
+    for (var k = 0; k < oldImgs.length; k++) oldImgs[k].src = BLANK;
+
+    var html = '';
+    for (var i = 0; i < DETECT_SLOTS; i++) {
+      html += '<div class="det">';
+      if (i < detectionQueue.length) {
+        var det = detectionQueue[i];
+        html += '<div class="det-img">';
+        if (det.picture) {
+          html += '<img data-pic="' + det.picture + '" alt="">';
+        }
+        html += '</div>';
+        html += '<div class="det-info">';
+        html += '<span class="det-name">' + esc(det.name) + '</span>';
+        if (det.time) {
+          html += ' <span class="det-time">' + fmtTime(det.time) + '</span>';
+        }
+        html += '</div>';
+      } else {
+        // Empty slot
+        html += '<div class="det-img"></div>';
+        html += '<div class="det-info"><span class="det-name" style="opacity:0.3">No detection</span></div>';
+      }
+      html += '</div>';
+    }
     el.innerHTML = html;
 
     // Sign and load detection images
@@ -850,6 +905,65 @@
     }
   }
 
+  // Subscribe to state_changed, filter to detection entities only
+  function subscribeDetections() {
+    if (detectionSubscribed) return;
+    if (!hass || !hass.connection) return;
+    detectionSubscribed = true;
+
+    try {
+      hass.connection.subscribeMessage(
+        function(msg) {
+          if (!msg || !msg.event || !msg.event.data) return;
+          var eid = msg.event.data.entity_id;
+          var name = DETECT_ENTITIES[eid];
+          if (!name) return; // not one of our detection entities — ignore
+
+          var ns = msg.event.data.new_state;
+          if (!ns || !ns.attributes || !ns.attributes.entity_picture) return;
+
+          addDetection(eid, name, ns.attributes.entity_picture, ns.last_changed);
+        },
+        { type: 'subscribe_events', event_type: 'state_changed' }
+      );
+    } catch (e) {}
+  }
+
+  // Seed the strip with current detection states on startup
+  function seedDetections() {
+    hass = getHass();
+    if (!hass) return;
+
+    // Gather all detection entities that have pictures, sort by last_changed
+    var initial = [];
+    for (var i = 0; i < DETECTIONS.length; i++) {
+      var det = DETECTIONS[i];
+      var st = hass.states[det.entity];
+      if (st && st.attributes && st.attributes.entity_picture) {
+        initial.push({
+          entity: det.entity,
+          name: det.name,
+          picture: st.attributes.entity_picture,
+          time: st.last_changed
+        });
+      }
+    }
+    // Sort newest first
+    initial.sort(function(a, b) {
+      return (b.time || '').localeCompare(a.time || '');
+    });
+    detectionQueue = initial.slice(0, DETECT_SLOTS);
+    renderDetectionStrip();
+  }
+
+  // Update relative timestamps periodically (without re-fetching images)
+  function updateDetectionTimes() {
+    var infos = document.querySelectorAll('.det-time');
+    for (var i = 0; i < infos.length && i < detectionQueue.length; i++) {
+      infos[i].textContent = fmtTime(detectionQueue[i].time);
+    }
+  }
+
   // ══════════════════════════════════════════════════════════
   // DASHBOARD TIMER MANAGEMENT
   // ══════════════════════════════════════════════════════════
@@ -862,7 +976,8 @@
     refreshCamera();
     renderChips();
     renderWeather();
-    renderDetections();
+    seedDetections();
+    subscribeDetections();
     fetchCalendar();
 
     camRefreshInterval = setInterval(refreshCamera, CAM_REFRESH_MS);
@@ -870,7 +985,7 @@
     dashTimers.push(camRefreshInterval, camSyncInterval);
     dashTimers.push(setInterval(renderChips, 30000));
     dashTimers.push(setInterval(renderWeather, WEATHER_MS));
-    dashTimers.push(setInterval(renderDetections, DETECT_MS));
+    dashTimers.push(setInterval(updateDetectionTimes, 60000)); // update relative timestamps every minute
     dashTimers.push(setInterval(fetchCalendar, CALENDAR_MS));
   }
 
@@ -878,7 +993,7 @@
     for (var i = 0; i < dashTimers.length; i++) clearInterval(dashTimers[i]);
     dashTimers = [];
     // Release camera image
-    camImg.src = '';
+    camImg.src = BLANK;
   }
 
   // ══════════════════════════════════════════════════════════
@@ -913,7 +1028,7 @@
     setTimeout(function() {
       ssPhoto.onload = null;
       ssPhoto.onerror = null;
-      ssPhoto.src = '';
+      ssPhoto.src = BLANK;
 
       ssPhoto.onload = function() {
         clearTimeout(ssLoadTimer);
@@ -926,7 +1041,7 @@
       ssLoadTimer = setTimeout(function() {
         ssPhoto.onload = null;
         ssPhoto.onerror = null;
-        ssPhoto.src = '';
+        ssPhoto.src = BLANK;
         if (ssImages.length > 1) showNextPhoto();
       }, 8000);
 
@@ -941,6 +1056,7 @@
     // loadPhotoList will start the slide timer on first load
     renderSSClock();
     renderSSWeather();
+    renderSSDebug();
   }
 
   function stopScreensaver() {
@@ -948,7 +1064,7 @@
     clearTimeout(ssLoadTimer);
     ssPhoto.onload = null;
     ssPhoto.onerror = null;
-    ssPhoto.src = '';
+    ssPhoto.src = BLANK;
     ssPhoto.classList.remove('visible');
     ssIndex = -1;
   }
@@ -999,6 +1115,73 @@
     }
   }
 
+  // Debug info for screensaver overlay — frozen value = time of death
+  var pageLoadTime = Date.now();
+  var jsErrors = 0;
+  var lastError = '';
+  var fetchCount = 0;
+  var fetchFails = 0;
+
+  // Catch unhandled errors
+  window.onerror = function(msg, src, line) {
+    jsErrors++;
+    lastError = (msg + '').substring(0, 60) + ' L' + line;
+  };
+
+  // Patch fetch to track request count and failures
+  var _origFetch = window.fetch;
+  window.fetch = function() {
+    fetchCount++;
+    return _origFetch.apply(this, arguments).then(function(r) {
+      if (!r.ok) fetchFails++;
+      return r;
+    }, function(e) {
+      fetchFails++;
+      throw e;
+    });
+  };
+
+  function renderSSDebug() {
+    var lines = [];
+
+    // Line 1: uptime, heap, tick
+    var p1 = [];
+    var uptimeSec = Math.floor((Date.now() - pageLoadTime) / 1000);
+    var uptimeMin = Math.floor(uptimeSec / 60);
+    var uptimeHr = Math.floor(uptimeMin / 60);
+    if (uptimeHr > 0) {
+      p1.push('up:' + uptimeHr + 'h' + (uptimeMin % 60) + 'm');
+    } else {
+      p1.push('up:' + uptimeMin + 'm');
+    }
+
+    if (performance && performance.memory) {
+      var used = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
+      var total = (performance.memory.totalJSHeapSize / 1048576).toFixed(1);
+      var limit = (performance.memory.jsHeapSizeLimit / 1048576).toFixed(0);
+      p1.push('heap:' + used + '/' + total + 'MB (max ' + limit + ')');
+    }
+
+    var now = new Date();
+    p1.push('tick:' + now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }));
+    lines.push(p1.join(' | '));
+
+    // Line 2: dom, images, fetches, errors
+    var imgCount = document.getElementsByTagName('img').length;
+    var domCount = document.getElementsByTagName('*').length;
+    var p2 = [];
+    p2.push('dom:' + domCount + ' img:' + imgCount);
+    p2.push('fetch:' + fetchCount + (fetchFails ? ' fail:' + fetchFails : ''));
+    if (jsErrors > 0) p2.push('err:' + jsErrors);
+    lines.push(p2.join(' | '));
+
+    // Line 3: last error (if any)
+    if (lastError) lines.push(lastError);
+
+    document.getElementById('ss-debug').textContent = lines.join('\n');
+    document.getElementById('ss-debug').style.whiteSpace = 'pre';
+  }
+
   // Anti-burn-in: reposition overlay
   var ssPositions = [
     { bottom: '40px', right: '40px', top: 'auto', left: 'auto', align: 'right' },
@@ -1019,11 +1202,12 @@
     ssOverlay.style.textAlign = pos.align;
   }, SS_DRIFT_MS);
 
-  // Screensaver clock update
+  // Screensaver clock + debug update
   setInterval(function() {
     if (isScreensaver) {
       renderSSClock();
       renderSSWeather();
+      renderSSDebug();
     }
   }, 30000);
 
