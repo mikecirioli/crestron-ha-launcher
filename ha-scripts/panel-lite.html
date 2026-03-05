@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crestron Panel Lite</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #111318;
+    color: #e1e1e1;
+    overflow: hidden;
+    width: 1280px;
+    height: 800px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     DASHBOARD VIEW
+     ══════════════════════════════════════════════════════════ */
+  #dashboard {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: 54px 1fr 120px;
+    width: 100%;
+    height: 100%;
+  }
+  #dashboard.hidden { display: none; }
+
+  /* ── Row 1: Chips bar ──────────────────────────────────── */
+  .chips-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    height: 54px;
+    background: rgba(0,0,0,0.3);
+  }
+
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.08);
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    height: 36px;
+  }
+  .chip-icon {
+    font-size: 18px;
+    opacity: 0.8;
+    width: 20px;
+    text-align: center;
+  }
+  .chip.on {
+    background: rgba(255,193,7,0.2);
+    color: #ffc107;
+  }
+  .chip-spacer { flex: 1; }
+
+  /* ── Row 2, Col 1: Camera ──────────────────────────────── */
+  .camera-area {
+    grid-column: 1;
+    grid-row: 2;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+  }
+  .camera-area img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .camera-label {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  /* ── Row 2, Col 2: Info column ─────────────────────────── */
+  .info-area {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Weather section */
+  .weather-section {
+    flex: 0 0 170px;
+    padding: 12px 16px;
+    background: rgba(0,0,0,0.2);
+    overflow: hidden;
+  }
+  .weather-current {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .weather-temp {
+    font-size: 42px;
+    font-weight: 300;
+    line-height: 1;
+  }
+  .weather-detail {
+    font-size: 14px;
+    opacity: 0.8;
+    line-height: 1.4;
+  }
+  .weather-forecast {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding-top: 8px;
+  }
+  .wf-day {
+    text-align: center;
+    font-size: 12px;
+    opacity: 0.85;
+    line-height: 1.4;
+    flex: 1;
+  }
+  .wf-day .wf-name { font-weight: 600; font-size: 13px; }
+  .wf-day .wf-hi { font-weight: 500; }
+  .wf-day .wf-lo { opacity: 0.5; }
+  .wf-day .wf-cond { font-size: 11px; opacity: 0.6; }
+
+  /* Calendar section */
+  .calendar-section {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  .calendar-section::-webkit-scrollbar { width: 4px; }
+  .calendar-section::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+  .cal-day-header {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    margin: 10px 0 3px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .cal-day-header:first-child { margin-top: 6px; }
+  .cal-event {
+    padding: 4px 10px;
+    border-left: 4px solid;
+    margin: 0 6px 3px 6px;
+    border-radius: 0 4px 4px 0;
+    background: rgba(255,255,255,0.07);
+  }
+  .cal-ev-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .cal-ev-time {
+    font-size: 11px;
+    color: #aaa;
+  }
+  .cal-empty {
+    color: #666;
+    text-align: center;
+    padding: 20px 10px;
+    font-size: 14px;
+  }
+
+  /* ── Row 3: Detection strip ────────────────────────────── */
+  .detection-strip {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+    height: 120px;
+    max-height: 120px;
+    overflow: hidden;
+    background: #111318;
+  }
+  .det {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #1a1a1a;
+    border-radius: 3px;
+    height: 120px;
+  }
+  .det-img {
+    flex: 1 1 auto;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .det-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .det-info {
+    flex: 0 0 16px;
+    padding: 1px 4px 2px;
+    font-size: 9px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(0,0,0,0.4);
+  }
+  .det-name { opacity: 0.85; }
+  .det-time { opacity: 0.45; }
+
+  /* ══════════════════════════════════════════════════════════
+     SCREENSAVER VIEW
+     ══════════════════════════════════════════════════════════ */
+  #screensaver {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: #000;
+    z-index: 100;
+  }
+  #screensaver.hidden { display: none; }
+
+  #ss-photo {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+  }
+  #ss-photo.visible { opacity: 1; }
+
+  .ss-overlay {
+    position: fixed;
+    bottom: 40px;
+    right: 40px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    padding: 16px 24px;
+    border-radius: 14px;
+    z-index: 110;
+    text-align: right;
+    transition: bottom 0.8s ease, right 0.8s ease, top 0.8s ease, left 0.8s ease;
+  }
+  .ss-overlay .ss-clock {
+    font-size: 36px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    line-height: 1.1;
+  }
+  .ss-overlay .ss-date {
+    font-size: 14px;
+    font-weight: 400;
+    opacity: 0.8;
+    margin-top: 2px;
+  }
+  .ss-overlay .ss-weather {
+    font-size: 15px;
+    font-weight: 400;
+    opacity: 0.9;
+    margin-top: 6px;
+  }
+  .ss-overlay .ss-forecast {
+    margin-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding-top: 8px;
+    display: flex;
+    gap: 16px;
+    justify-content: flex-end;
+  }
+  .ss-overlay .ss-fc-day {
+    text-align: center;
+    font-size: 12px;
+    opacity: 0.85;
+    line-height: 1.4;
+  }
+  .ss-fc-day .ss-fc-name { font-weight: 600; font-size: 13px; }
+  .ss-fc-day .ss-fc-hi { font-weight: 500; }
+  .ss-fc-day .ss-fc-lo { opacity: 0.6; }
+  .ss-fc-day .ss-fc-cond { font-size: 11px; opacity: 0.7; }
+</style>
+</head>
+<body>
+
+  <!-- ════ DASHBOARD ═══════════════════════════════════════ -->
+  <div id="dashboard">
+    <div class="chips-bar" id="chips-bar"></div>
+    <div class="camera-area">
+      <img id="cam-img" alt="">
+      <div class="camera-label" id="cam-label"></div>
+    </div>
+    <div class="info-area">
+      <div class="weather-section" id="weather-section"></div>
+      <div class="calendar-section" id="calendar-section"></div>
+    </div>
+    <div class="detection-strip" id="detection-strip"></div>
+  </div>
+
+  <!-- ════ SCREENSAVER ═════════════════════════════════════ -->
+  <div id="screensaver" class="hidden">
+    <img id="ss-photo" alt="">
+    <div class="ss-overlay" id="ss-overlay">
+      <div class="ss-clock" id="ss-clock"></div>
+      <div class="ss-date" id="ss-date"></div>
+      <div class="ss-weather" id="ss-weather"></div>
+      <div class="ss-forecast" id="ss-forecast"></div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ══════════════════════════════════════════════════════════
+  // CONFIGURATION
+  // ══════════════════════════════════════════════════════════
+
+  var CAMERAS = [
+    { entity: 'camera.frontporch', name: 'Front Porch' },
+    { entity: 'camera.driveway',   name: 'Driveway' },
+    { entity: 'camera.backyard',   name: 'Back Yard' },
+    { entity: 'camera.critter',    name: 'Critter' },
+    { entity: 'camera.armory',     name: 'Armory' },
+    { entity: 'camera.pancam',     name: 'Pan Cam' },
+    { entity: 'camera.gatetown',   name: 'Gatetown' }
+  ];
+
+  var DETECTIONS = [
+    { entity: 'image.frontporch_person', name: 'Front Porch' },
+    { entity: 'image.driveway_person',   name: 'Driveway' },
+    { entity: 'image.backyard_person',   name: 'Backyard' },
+    { entity: 'image.critter_person',    name: 'Critter' },
+    { entity: 'image.armory_person',     name: 'Armory' },
+    { entity: 'image.pancam_person',     name: 'Pan Cam' },
+    { entity: 'image.gatetown_person',   name: 'Gatetown' }
+  ];
+
+  var CALENDARS = [
+    { entity: 'calendar.home',                       color: '#4285f4' },
+    { entity: 'calendar.mikecirioli_gmail_com',      color: '#ea4335' },
+    { entity: 'calendar.birthdays',                  color: '#fbbc04' },
+    { entity: 'calendar.wcpss_24_25_trad_calendar',  color: '#34a853' },
+    { entity: 'calendar.mcirioli_cloudbees_com',     color: '#ff6d01' },
+    { entity: 'calendar.jenkins',                    color: '#46bdc6' }
+  ];
+
+  var CHIPS = [
+    { entity: 'vacuum.sweeping_robot',          icon: '\uD83E\uDDF9', name: 'Roesy' },
+    { entity: 'light.ceiling_light_rgbcw_8f2721', icon: '\uD83D\uDCA1', name: 'Sink' },
+    { entity: 'switch.smart_plug_3',            icon: '\uD83C\uDF32', name: 'Tree' },
+    { entity: 'switch.smart_plug',              icon: '\u26F2',       name: 'Fountain' },
+    { entity: 'switch.smart_plug_2',            icon: '\uD83D\uDC1F', name: 'Pond' }
+  ];
+
+  var WEATHER_ENTITY    = 'weather.forecast_home';
+  var CAMERA_SELECTOR   = 'input_select.camera_selector';
+  var IMAGE_LIST_URL    = '/local/photoframe-images.json';
+
+  var CAM_REFRESH_MS    = 3000;   // camera snapshot refresh
+  var CAM_SYNC_MS       = 1500;   // sync camera selector
+  var CALENDAR_MS       = 300000; // calendar refresh (5 min)
+  var WEATHER_MS        = 300000; // weather refresh (5 min)
+  var DETECT_MS         = 30000;  // detection strip refresh (30s)
+  var PHOTO_MS          = 30000;  // screensaver photo interval (30s)
+  var PHOTO_LIST_MS     = 3600000;// photo list refresh (1 hr)
+  var IDLE_TIMEOUT      = 120000; // 2 min → screensaver
+  var SS_DRIFT_MS       = 120000; // reposition overlay (2 min)
+  var FORECAST_DAYS     = 3;
+
+  // Opt-in periodic reload for memory management
+  var reloadParam = (new URLSearchParams(location.search)).get('reload');
+  if (reloadParam) {
+    var reloadMs = parseInt(reloadParam, 10) * 1000;
+    if (reloadMs > 0) {
+      setTimeout(function() {
+        try { window.parent.location.reload(); } catch (e) { location.reload(); }
+      }, reloadMs);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // STATE
+  // ══════════════════════════════════════════════════════════
+
+  var hass = null;
+  var curCam = -1;
+  var idleTimer = null;
+  var manualScreensaver = false;
+  var isScreensaver = false;
+
+  // Screensaver photo state
+  var ssImages = [];
+  var ssIndex = -1;
+  var ssLoadTimer = null;
+  var ssSlideTimer = null;
+
+  // Timers (stored for cleanup)
+  var camRefreshInterval = null;
+  var camSyncInterval = null;
+
+  // DOM refs
+  var dashEl = document.getElementById('dashboard');
+  var ssEl = document.getElementById('screensaver');
+  var camImg = document.getElementById('cam-img');
+  var camLabel = document.getElementById('cam-label');
+  var ssPhoto = document.getElementById('ss-photo');
+  var ssOverlay = document.getElementById('ss-overlay');
+
+  // ══════════════════════════════════════════════════════════
+  // HA HELPERS
+  // ══════════════════════════════════════════════════════════
+
+  function getHass() {
+    try {
+      var ha = window.parent.document.querySelector('home-assistant');
+      return (ha && ha.hass) ? ha.hass : null;
+    } catch (e) { return null; }
+  }
+
+  function signPath(path, cb) {
+    if (!hass || !hass.connection) return cb(null);
+    hass.connection.sendMessagePromise({
+      type: 'auth/sign_path',
+      path: path,
+      expires: 300
+    }).then(function(r) { cb(r.path); })
+      .catch(function() { cb(null); });
+  }
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function formatCondition(state) {
+    return state.replace(/-/g, ' ').replace(/_/g, ' ')
+      .replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+  }
+
+  function shortDay(dateStr) {
+    var d = new Date(dateStr + 'T12:00:00');
+    return d.toLocaleDateString([], { weekday: 'short' });
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    var m = Math.floor((new Date() - d) / 60000);
+    if (m < 1) return 'Just now';
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // VIEW SWITCHING
+  // ══════════════════════════════════════════════════════════
+
+  function showDashboard() {
+    isScreensaver = false;
+    ssEl.classList.add('hidden');
+    dashEl.classList.remove('hidden');
+    stopScreensaver();
+    startDashboardTimers();
+    startIdleTimer();
+  }
+
+  function showScreensaver() {
+    isScreensaver = true;
+    dashEl.classList.add('hidden');
+    ssEl.classList.remove('hidden');
+    stopDashboardTimers();
+    startScreensaver();
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // IDLE DETECTION
+  // ══════════════════════════════════════════════════════════
+
+  function startIdleTimer() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function() {
+      showScreensaver();
+    }, IDLE_TIMEOUT);
+  }
+
+  function onActivity() {
+    if (manualScreensaver) return;
+    if (isScreensaver) {
+      showDashboard();
+    }
+    startIdleTimer();
+  }
+
+  // Touch/mouse only (not keydown, to avoid conflicts with side buttons)
+  ['touchstart', 'mousedown', 'mousemove'].forEach(function(evt) {
+    document.addEventListener(evt, onActivity, { capture: true, passive: true });
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // SIDE BUTTON HANDLER (TSW-1060)
+  // ══════════════════════════════════════════════════════════
+
+  var BUTTON_MAP = {
+    'BrowserBack':     'go-home',
+    'Home':            'go-home',
+    'AudioVolumeUp':   'cam-next',
+    'AudioVolumeDown': 'cam-prev',
+    'AudioVolumeMute': 'toggle-ss'
+  };
+
+  document.addEventListener('keydown', function(e) {
+    var action = BUTTON_MAP[e.key];
+    if (!action) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    switch (action) {
+      case 'go-home':
+        manualScreensaver = false;
+        showDashboard();
+        break;
+      case 'toggle-ss':
+        if (isScreensaver) {
+          manualScreensaver = false;
+          showDashboard();
+        } else {
+          manualScreensaver = true;
+          clearTimeout(idleTimer);
+          showScreensaver();
+        }
+        break;
+      case 'cam-next':
+        if (isScreensaver) {
+          manualScreensaver = false;
+          showDashboard();
+          setTimeout(function() { cycleCamera('next'); }, 300);
+        } else {
+          cycleCamera('next');
+        }
+        startIdleTimer();
+        break;
+      case 'cam-prev':
+        if (isScreensaver) {
+          manualScreensaver = false;
+          showDashboard();
+          setTimeout(function() { cycleCamera('previous'); }, 300);
+        } else {
+          cycleCamera('previous');
+        }
+        startIdleTimer();
+        break;
+    }
+  }, true);
+
+  function cycleCamera(direction) {
+    if (!hass) return;
+    var svc = direction === 'next' ? 'select_next' : 'select_previous';
+    hass.callService('input_select', svc, { cycle: true },
+      { entity_id: CAMERA_SELECTOR });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DASHBOARD: CHIPS BAR
+  // ══════════════════════════════════════════════════════════
+
+  function renderChips() {
+    hass = getHass();
+    if (!hass) return;
+
+    var now = new Date();
+    var timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    var dateStr = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+    var html = '';
+    html += '<div class="chip"><span class="chip-icon">\u23F0</span>' + esc(timeStr) + '</div>';
+    html += '<div class="chip"><span class="chip-icon">\uD83D\uDCC5</span>' + esc(dateStr) + '</div>';
+    html += '<div class="chip-spacer"></div>';
+
+    for (var i = 0; i < CHIPS.length; i++) {
+      var c = CHIPS[i];
+      var st = hass.states[c.entity];
+      var isOn = st && (st.state === 'on' || st.state === 'cleaning' ||
+                        st.state === 'home');
+      html += '<div class="chip' + (isOn ? ' on' : '') + '">';
+      html += '<span class="chip-icon">' + c.icon + '</span>';
+      html += esc(c.name);
+      html += '</div>';
+    }
+
+    document.getElementById('chips-bar').innerHTML = html;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DASHBOARD: CAMERA
+  // ══════════════════════════════════════════════════════════
+
+  function syncCamera() {
+    hass = getHass();
+    if (!hass) return;
+    var s = hass.states[CAMERA_SELECTOR];
+    if (!s) return;
+    for (var i = 0; i < CAMERAS.length; i++) {
+      if (CAMERAS[i].entity === s.state) {
+        if (i !== curCam) {
+          curCam = i;
+          refreshCamera();
+        }
+        return;
+      }
+    }
+  }
+
+  function refreshCamera() {
+    if (curCam < 0 || curCam >= CAMERAS.length) return;
+    var cam = CAMERAS[curCam];
+    camLabel.textContent = cam.name;
+    signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
+      if (!url) return;
+      var tmp = new Image();
+      tmp.onload = function() {
+        camImg.src = '';
+        camImg.src = url;
+        tmp = null;
+      };
+      tmp.onerror = function() { tmp = null; };
+      tmp.src = url;
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DASHBOARD: WEATHER
+  // ══════════════════════════════════════════════════════════
+
+  var forecastData = null;
+
+  function renderWeather() {
+    hass = getHass();
+    if (!hass) return;
+    var entity = hass.states[WEATHER_ENTITY];
+    if (!entity) return;
+
+    var temp = Math.round(entity.attributes.temperature);
+    var unit = entity.attributes.temperature_unit || '\u00B0F';
+    var cond = formatCondition(entity.state);
+    var humid = entity.attributes.humidity;
+
+    var html = '';
+    html += '<div class="weather-current">';
+    html += '<div class="weather-temp">' + temp + '<span style="font-size:20px">' + esc(unit) + '</span></div>';
+    html += '<div class="weather-detail">' + esc(cond);
+    if (humid != null) html += '<br>Humidity: ' + humid + '%';
+    html += '</div>';
+    html += '</div>';
+
+    // Forecast
+    if (forecastData && forecastData.length > 1) {
+      html += '<div class="weather-forecast">';
+      var days = forecastData.slice(1, FORECAST_DAYS + 1);
+      for (var i = 0; i < days.length; i++) {
+        var day = days[i];
+        var hi = Math.round(day.temperature);
+        var lo = day.templow != null ? Math.round(day.templow) : '';
+        html += '<div class="wf-day">';
+        html += '<div class="wf-name">' + shortDay(day.datetime.split('T')[0]) + '</div>';
+        html += '<div><span class="wf-hi">' + hi + '\u00B0</span>';
+        if (lo !== '') html += ' <span class="wf-lo">' + lo + '\u00B0</span>';
+        html += '</div>';
+        html += '<div class="wf-cond">' + formatCondition(day.condition) + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    document.getElementById('weather-section').innerHTML = html;
+  }
+
+  function subscribeForecast() {
+    if (!hass || !hass.connection) return;
+    try {
+      hass.connection.subscribeMessage(
+        function(msg) {
+          if (msg && msg.forecast) {
+            forecastData = msg.forecast;
+            renderWeather();
+            renderSSWeather();
+          }
+        },
+        { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: WEATHER_ENTITY }
+      );
+    } catch (e) {
+      // Fallback for older HA
+      var entity = hass.states[WEATHER_ENTITY];
+      if (entity && entity.attributes.forecast) {
+        forecastData = entity.attributes.forecast;
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DASHBOARD: CALENDAR
+  // ══════════════════════════════════════════════════════════
+
+  function fetchCalendar() {
+    hass = getHass();
+    if (!hass) return;
+
+    var now = new Date();
+    var start = now.toISOString();
+    var end = new Date(now.getTime() + 7 * 86400000).toISOString();
+    var all = [];
+    var pending = CALENDARS.length;
+
+    CALENDARS.forEach(function(cal) {
+      if (!hass.states[cal.entity]) { if (--pending === 0) renderCalendar(all); return; }
+      var path = '/api/calendars/' + cal.entity
+        + '?start=' + encodeURIComponent(start)
+        + '&end=' + encodeURIComponent(end);
+
+      signPath(path, function(signed) {
+        if (!signed) { if (--pending === 0) renderCalendar(all); return; }
+        fetch(signed).then(function(r) { return r.json(); })
+          .then(function(evts) {
+            evts.forEach(function(ev) { ev._color = cal.color; });
+            all = all.concat(evts);
+          })
+          .catch(function() {})
+          .then(function() { if (--pending === 0) renderCalendar(all); });
+      });
+    });
+  }
+
+  function renderCalendar(events) {
+    events.sort(function(a, b) {
+      return (a.start.dateTime || a.start.date || '')
+        .localeCompare(b.start.dateTime || b.start.date || '');
+    });
+
+    var html = '';
+    var lastDay = '';
+
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      var s = ev.start.dateTime || ev.start.date;
+      var d = new Date(s);
+      var dayKey = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+      if (dayKey !== lastDay) {
+        html += '<div class="cal-day-header">' + esc(dayKey) + '</div>';
+        lastDay = dayKey;
+      }
+
+      var time = '';
+      if (ev.start.dateTime) {
+        time = new Date(ev.start.dateTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        if (ev.end && ev.end.dateTime) {
+          time += ' \u2013 ' + new Date(ev.end.dateTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+      } else {
+        time = 'All day';
+      }
+
+      var title = ev.summary || ev.title || '(No title)';
+      html += '<div class="cal-event" style="border-left-color:' + ev._color + '">';
+      html += '<div class="cal-ev-title">' + esc(title) + '</div>';
+      html += '<div class="cal-ev-time">' + esc(time) + '</div>';
+      html += '</div>';
+    }
+
+    if (!events.length) {
+      html = '<div class="cal-empty">No events this week</div>';
+    }
+
+    document.getElementById('calendar-section').innerHTML = html;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DASHBOARD: DETECTION STRIP
+  // ══════════════════════════════════════════════════════════
+
+  function renderDetections() {
+    hass = getHass();
+    if (!hass) return;
+
+    var el = document.getElementById('detection-strip');
+    var html = '';
+
+    for (var i = 0; i < DETECTIONS.length; i++) {
+      var det = DETECTIONS[i];
+      var st = hass.states[det.entity];
+      html += '<div class="det">';
+      html += '<div class="det-img">';
+      if (st && st.attributes.entity_picture) {
+        html += '<img data-pic="' + st.attributes.entity_picture + '" alt="">';
+      }
+      html += '</div>';
+      html += '<div class="det-info">';
+      html += '<span class="det-name">' + det.name + '</span>';
+      if (st && st.last_changed) {
+        html += ' <span class="det-time">' + fmtTime(st.last_changed) + '</span>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
+
+    // Release old images before replacing
+    var oldImgs = el.querySelectorAll('img');
+    for (var k = 0; k < oldImgs.length; k++) oldImgs[k].src = '';
+    el.innerHTML = html;
+
+    // Sign and load detection images
+    var imgs = el.querySelectorAll('img[data-pic]');
+    for (var j = 0; j < imgs.length; j++) {
+      (function(img) {
+        var p = img.getAttribute('data-pic');
+        var sep = p.indexOf('?') > -1 ? '&' : '?';
+        signPath(p + sep + 't=' + Date.now(), function(url) {
+          if (url) img.src = url;
+        });
+      })(imgs[j]);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DASHBOARD TIMER MANAGEMENT
+  // ══════════════════════════════════════════════════════════
+
+  var dashTimers = [];
+
+  function startDashboardTimers() {
+    stopDashboardTimers();
+    syncCamera();
+    refreshCamera();
+    renderChips();
+    renderWeather();
+    renderDetections();
+    fetchCalendar();
+
+    camRefreshInterval = setInterval(refreshCamera, CAM_REFRESH_MS);
+    camSyncInterval = setInterval(syncCamera, CAM_SYNC_MS);
+    dashTimers.push(camRefreshInterval, camSyncInterval);
+    dashTimers.push(setInterval(renderChips, 30000));
+    dashTimers.push(setInterval(renderWeather, WEATHER_MS));
+    dashTimers.push(setInterval(renderDetections, DETECT_MS));
+    dashTimers.push(setInterval(fetchCalendar, CALENDAR_MS));
+  }
+
+  function stopDashboardTimers() {
+    for (var i = 0; i < dashTimers.length; i++) clearInterval(dashTimers[i]);
+    dashTimers = [];
+    // Release camera image
+    camImg.src = '';
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // SCREENSAVER: PHOTO SLIDESHOW
+  // ══════════════════════════════════════════════════════════
+
+  function loadPhotoList() {
+    fetch(IMAGE_LIST_URL + '?_=' + Date.now())
+      .then(function(r) { return r.json(); })
+      .then(function(list) {
+        if (list && list.length > 0) {
+          ssImages = list;
+          if (ssIndex === -1 && isScreensaver) {
+            shuffle(ssImages);
+            showNextPhoto();
+            ssSlideTimer = setInterval(showNextPhoto, PHOTO_MS);
+          }
+        }
+      })
+      .catch(function() {});
+  }
+
+  function showNextPhoto() {
+    if (ssImages.length === 0) return;
+    ssIndex = (ssIndex + 1) % ssImages.length;
+    if (ssIndex === 0 && ssImages.length > 1) shuffle(ssImages);
+
+    // Fade out
+    ssPhoto.classList.remove('visible');
+    clearTimeout(ssLoadTimer);
+
+    setTimeout(function() {
+      ssPhoto.onload = null;
+      ssPhoto.onerror = null;
+      ssPhoto.src = '';
+
+      ssPhoto.onload = function() {
+        clearTimeout(ssLoadTimer);
+        ssPhoto.classList.add('visible');
+      };
+      ssPhoto.onerror = function() {
+        clearTimeout(ssLoadTimer);
+        if (ssImages.length > 1) showNextPhoto();
+      };
+      ssLoadTimer = setTimeout(function() {
+        ssPhoto.onload = null;
+        ssPhoto.onerror = null;
+        ssPhoto.src = '';
+        if (ssImages.length > 1) showNextPhoto();
+      }, 8000);
+
+      ssPhoto.src = ssImages[ssIndex];
+    }, 1600);
+  }
+
+  function startScreensaver() {
+    ssIndex = -1;
+    loadPhotoList();
+    if (ssSlideTimer) clearInterval(ssSlideTimer);
+    // loadPhotoList will start the slide timer on first load
+    renderSSClock();
+    renderSSWeather();
+  }
+
+  function stopScreensaver() {
+    if (ssSlideTimer) { clearInterval(ssSlideTimer); ssSlideTimer = null; }
+    clearTimeout(ssLoadTimer);
+    ssPhoto.onload = null;
+    ssPhoto.onerror = null;
+    ssPhoto.src = '';
+    ssPhoto.classList.remove('visible');
+    ssIndex = -1;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // SCREENSAVER: CLOCK + WEATHER
+  // ══════════════════════════════════════════════════════════
+
+  function renderSSClock() {
+    var now = new Date();
+    document.getElementById('ss-clock').textContent =
+      now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    document.getElementById('ss-date').textContent =
+      now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  function renderSSWeather() {
+    hass = getHass();
+    if (!hass) return;
+
+    var entity = hass.states[WEATHER_ENTITY];
+    if (!entity) return;
+
+    var temp = Math.round(entity.attributes.temperature);
+    var unit = entity.attributes.temperature_unit || '\u00B0F';
+    var cond = formatCondition(entity.state);
+    document.getElementById('ss-weather').textContent =
+      temp + unit + '  \u00B7  ' + cond;
+
+    // Forecast
+    if (forecastData && forecastData.length > 1) {
+      var el = document.getElementById('ss-forecast');
+      var days = forecastData.slice(1, FORECAST_DAYS + 1);
+      var html = '';
+      for (var i = 0; i < days.length; i++) {
+        var day = days[i];
+        var hi = Math.round(day.temperature);
+        var lo = day.templow != null ? Math.round(day.templow) : '';
+        html += '<div class="ss-fc-day">';
+        html += '<div class="ss-fc-name">' + shortDay(day.datetime.split('T')[0]) + '</div>';
+        html += '<div><span class="ss-fc-hi">' + hi + '\u00B0</span>';
+        if (lo !== '') html += ' <span class="ss-fc-lo">' + lo + '\u00B0</span>';
+        html += '</div>';
+        html += '<div class="ss-fc-cond">' + formatCondition(day.condition) + '</div>';
+        html += '</div>';
+      }
+      el.innerHTML = html;
+    }
+  }
+
+  // Anti-burn-in: reposition overlay
+  var ssPositions = [
+    { bottom: '40px', right: '40px', top: 'auto', left: 'auto', align: 'right' },
+    { bottom: 'auto', right: '40px', top: '40px', left: 'auto', align: 'right' },
+    { bottom: 'auto', right: 'auto', top: '40px', left: '40px', align: 'left' },
+    { bottom: '40px', right: 'auto', top: 'auto', left: '40px', align: 'left' }
+  ];
+  var ssPosIndex = 0;
+
+  setInterval(function() {
+    if (!isScreensaver) return;
+    ssPosIndex = (ssPosIndex + 1) % ssPositions.length;
+    var pos = ssPositions[ssPosIndex];
+    ssOverlay.style.bottom = pos.bottom;
+    ssOverlay.style.right = pos.right;
+    ssOverlay.style.top = pos.top;
+    ssOverlay.style.left = pos.left;
+    ssOverlay.style.textAlign = pos.align;
+  }, SS_DRIFT_MS);
+
+  // Screensaver clock update
+  setInterval(function() {
+    if (isScreensaver) {
+      renderSSClock();
+      renderSSWeather();
+    }
+  }, 30000);
+
+  // ══════════════════════════════════════════════════════════
+  // INIT
+  // ══════════════════════════════════════════════════════════
+
+  function init() {
+    hass = getHass();
+    if (!hass) return;
+
+    subscribeForecast();
+    showDashboard();
+
+    // Pre-load photo list so screensaver can start instantly
+    loadPhotoList();
+    setInterval(loadPhotoList, PHOTO_LIST_MS);
+  }
+
+  // Wait for parent HA
+  (function wait() {
+    var ha;
+    try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+    if (ha && ha.hass) return init();
+    var n = 0;
+    var iv = setInterval(function() {
+      try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
+      if (ha && ha.hass) { clearInterval(iv); init(); }
+      if (++n > 300) clearInterval(iv);
+    }, 100);
+  })();
+
+})();
+</script>
+</body>
+</html>

@@ -239,40 +239,105 @@ Run it twice, 10 seconds apart, and compare `Current Boot Counter`. Typical resu
 
 With `BROWSERCACHE DISABLE`, write rates stay well within safe limits.
 
-## Dashboard & Photo Frame
+## Dashboard
 
-The `ha-scripts/` directory includes a complete two-view dashboard designed for the TSW-1060 (1280x800):
+The `ha-scripts/` directory includes dashboard layouts designed for the TSW-1060 (1280x800). Multiple iterations exist, reflecting the evolution from HA-native cards to a lightweight single-page approach.
 
-- **Home view** — cycling camera snapshots (via `input_select` + conditional cards) with a compact control strip and info sidebar (clock, weather, calendar, recent detections)
-- **Photos view** — full-screen photo frame slideshow with clock/weather/forecast overlay
+### Dashboard Versions
 
-After 2 minutes of no touch, the panel switches to the photo frame. Any touch returns to the dashboard. The photo frame runs in an iframe, completely isolated from the HA frontend.
+All versions are in `ha-scripts/` and can be used by creating an HA dashboard and pasting the YAML into the raw editor.
 
-Camera snapshots use `picture-entity` cards with `camera_view: auto` — lightweight JPEG snapshots instead of live video streams. The TSW-1060's Chromium 95 WebView cannot sustainably decode MJPEG or WebRTC video (the WebView crash-loops after ~20 minutes). A 15-minute hard refresh timer in `crestron-panel.js` reclaims leaked WebView memory by navigating directly to the photos view.
+| Version | File | Layout | Key Ideas |
+|---------|------|--------|-----------|
+| **Lite** | `dash-lite.yaml` + `panel-lite.html` | Single vanilla JS page, zero sub-iframes | Lightest weight, best stability. Dashboard + screensaver in one file. |
+| v6 | `dash-v6.yaml` | 2-column grid (camera + info), 3 iframes | Periodic `?reload=900` on all iframes for memory management |
+| v5 | `dash-v5.yaml` | 3-column (camera + controls + calendar) | Mushroom entity cards for device control, Reddit-inspired blocky UI |
+| v4 | `dash-v4.yaml` | 2-column grid, 3 iframes | First stable iframe-based layout, base for v6 |
+| v3 | `dash-v3.yaml` | Grid with mushroom chips + stacked cards | Weather forecast + calendar in right column |
+| v2 | `dash-v2.yaml` | Grid with entity cards | Larger device controls, experimental layout |
+| v1 | `dash-v1.yaml` | Basic conditional camera cards | Original `picture-entity` cycling, no iframes |
 
-### Deploy the Dashboard
+**Other HTML components** (used by v4-v6):
 
-1. Copy the HA scripts and static files:
+| File | Purpose |
+|------|---------|
+| `camera-panel.html` | Camera snapshot viewer, syncs with `input_select`, image preloading with null-out |
+| `calendar-panel.html` | 7-day calendar, 6 color-coded calendars, signed HA REST API calls |
+| `detection-strip.html` | 7 Frigate person detection thumbnails with relative timestamps |
+| `photoframe.html` | Photo frame screensaver with crossfade, clock, weather, forecast overlay |
+| `photoframe-lite.html` | Stripped-down screensaver: single `<img>`, no blur, no drift animation |
+| `camera-viewer.html` | Experimental standalone camera viewer (not used by any dashboard) |
+| `crestron-dashboard.html` | Early standalone dashboard prototype (not used by any dashboard) |
+| `crestron-sidekeys.example.js` | Minimal side button example: navigate, service, fire actions |
+
+### Panel Lite (Recommended)
+
+A single HTML page that renders the entire dashboard and screensaver in one document — no HA card framework, no sub-iframes, no WebSocket subscription firehose. Designed for maximum stability on Chromium 95.
+
+**Features:**
+- Camera snapshots (syncs with `input_select.camera_selector`, 3s refresh)
+- Weather + 3-day forecast
+- Calendar events (6 calendars, color-coded, 7-day lookahead)
+- Detection strip (7 Frigate person detection thumbnails, 30s polling)
+- Chips bar (clock, date, entity states — display only)
+- Photo frame screensaver (2 min idle, single `<img>`, no blur/drift animation)
+- Side button handling (camera cycling, screensaver toggle)
+- Periodic full-page reload to combat WebView memory leaks
+
+**What it eliminates vs HA-native dashboards:**
+- HA frontend framework (Polymer/Lit, ~20MB JS heap)
+- Multiple iframes (3 separate document contexts)
+- Mushroom/layout-card/card-mod custom elements
+- `state_changed` event subscription (detection strip uses polling instead)
+- `backdrop-filter: blur()` and continuous CSS animations (GPU killers)
+
+**Deploy:**
+
+```bash
+# Copy files to HA
+cp ha-scripts/panel-lite.html <ha-config-path>/www/panel-lite.html
+cp ha-scripts/photoframe_build_list.py <ha-config-path>/scripts/photoframe_build_list.py
+```
+
+Create a new dashboard in HA: **Settings > Dashboards > Add Dashboard**. Set the URL to `crestron-lite`. Paste `dash-lite.yaml` into the raw editor.
+
+### HA-Native Dashboards (v5/v6)
+
+These use the standard HA card framework with `custom:grid-layout` and iframe cards for camera, calendar, and detection strip. They require HACS components: `layout-card`, `mushroom`, `card-mod`.
+
+**Deploy (v6 example):**
 
 ```bash
 cp ha-scripts/crestron-panel.js <ha-config-path>/www/crestron-panel.js
+cp ha-scripts/camera-panel.html <ha-config-path>/www/camera-panel.html
+cp ha-scripts/calendar-panel.html <ha-config-path>/www/calendar-panel.html
+cp ha-scripts/detection-strip.html <ha-config-path>/www/detection-strip.html
 cp ha-scripts/photoframe.html <ha-config-path>/www/photoframe.html
 cp ha-scripts/photoframe_build_list.py <ha-config-path>/scripts/photoframe_build_list.py
 ```
 
-2. Merge `ha-scripts/configuration-additions.yaml` into your `configuration.yaml`. Replace `<HA_IP>` with your Home Assistant IP.
+Create a dashboard with URL `crestron-v6` and paste `dash-v6.yaml` into the raw editor.
 
-3. Add the automations from `ha-scripts/automations-crestron.yaml` to your automations (via YAML or the HA UI).
+`crestron-panel.js` handles idle detection, screensaver navigation, and side buttons for v5/v6. It's loaded globally via `frontend > extra_js_url_es5` but only activates on matching dashboard paths. **Not needed for Panel Lite** (which handles everything internally).
 
-4. Create a new dashboard in HA: **Settings > Dashboards > Add Dashboard**. Set the URL to `crestron-display` and mode to **YAML**. Paste the contents of `ha-scripts/dash.yaml` into the raw editor.
+### Common Setup
 
-5. Edit `dash.yaml` to match your setup — camera entities, control strip entities, etc. See the comments in the file.
+All dashboard versions require:
 
-6. Create the `input_select.camera_selector` helper (via **Settings > Helpers > Add > Dropdown**) with your camera entity IDs as options.
+1. Merge `ha-scripts/configuration-additions.yaml` into your `configuration.yaml`
+2. Add automations from `ha-scripts/automations-crestron.yaml`
+3. Create the `input_select.camera_selector` helper with your camera entity IDs
+4. Add photos to `/media/ciriolisaver/` (or change path in `photoframe_build_list.py`)
+5. Restart HA
 
-7. Add photos to `/media/ciriolisaver/` (or change the path in `photoframe_build_list.py`). The image list rebuilds automatically on HA startup and every hour.
+### WebView Stability
 
-8. Restart HA to load everything.
+The TSW-1060 runs Chromium 95 on Android 5.1 with ~1.7GB RAM. Key constraints:
+
+- **No live video** — MJPEG/WebRTC/jsmpeg all crash-loop the WebView within ~20 min
+- **No expensive CSS** — `backdrop-filter: blur()` and continuous CSS animations consume GPU
+- **Memory leaks** — Chromium 95 leaks decoded image bitmaps and JS heap over time
+- **Periodic reload** — all dashboards use `?reload=N` (seconds) to trigger a full page teardown, reclaiming all leaked memory. Camera and photoframe iframes fire `window.parent.location.reload()` on a timer.
 
 ## Side Buttons
 
@@ -298,7 +363,7 @@ Open `http://<HA_IP>:8123/local/keytest.html` on the panel and press each button
 
 ### Panel Controller (crestron-panel.js)
 
-The panel controller handles side buttons, idle detection, camera cycling, and WebView memory management in one script. It only activates on the `crestron-display` dashboard (guard clause) — inert on all other devices.
+The panel controller handles side buttons, idle detection, camera cycling, and WebView memory management in one script. It activates on `crestron-display` and `crestron-v6` dashboards (guard clause) — inert on all other devices. **Not needed for Panel Lite** (which handles everything internally).
 
 Default button mapping:
 

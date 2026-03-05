@@ -131,6 +131,12 @@
       html += '</div>';
     }
 
+    // Help GC clear old images from memory
+    var oldImgs = el.querySelectorAll('img');
+    for (var k = 0; k < oldImgs.length; k++) {
+      oldImgs[k].src = '';
+    }
+
     el.innerHTML = html;
 
     // Sign and load images

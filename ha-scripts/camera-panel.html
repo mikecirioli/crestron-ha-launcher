@@ -54,6 +54,11 @@
   var REFRESH_MS = 2500;
   var SYNC_MS    = 1500;
 
+  // Opt-in periodic parent-page reload to reclaim leaked memory.
+  // Usage: camera-panel.html?reload=900 (seconds). Omit param = no reload.
+  var reloadParam = (new URLSearchParams(location.search)).get('reload');
+  var RELOAD_MS = reloadParam ? parseInt(reloadParam, 10) * 1000 : 0;
+
   var camImg   = document.getElementById('cam');
   var camLabel = document.getElementById('label');
   var curCam   = -1;
@@ -81,7 +86,17 @@
     var cam = CAMERAS[curCam];
     camLabel.textContent = cam.name;
     signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
-      if (url) camImg.src = url;
+      if (!url) return;
+      // Preload in a temp Image so the visible img only swaps on success.
+      // Nulling old src first hints Chromium to release the decoded bitmap.
+      var tmp = new Image();
+      tmp.onload = function() {
+        camImg.src = '';    // release old decoded bitmap
+        camImg.src = url;   // swap to preloaded (served from cache)
+        tmp = null;
+      };
+      tmp.onerror = function() { tmp = null; };
+      tmp.src = url;
     });
   }
 
@@ -107,6 +122,14 @@
     syncSelector();
     setInterval(refreshSnapshot, REFRESH_MS);
     setInterval(syncSelector, SYNC_MS);
+
+    // Periodic full-page reload: tears down all iframes, JS heap, decoded
+    // bitmaps, and WebSocket subscriptions — nuclear GC for Chromium 95.
+    if (RELOAD_MS > 0) {
+      setTimeout(function() {
+        try { window.parent.location.reload(); } catch (e) { location.reload(); }
+      }, RELOAD_MS);
+    }
   }
 
   // Wait for parent HA

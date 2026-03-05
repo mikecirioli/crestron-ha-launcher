@@ -14,15 +14,23 @@
 (function() {
   'use strict';
 
-  // ── Guard clause: only run on the Crestron dashboard ───────────
+  // ── Guard clause: only run on Crestron dashboards ─────────────
   // This script loads globally but immediately exits on other
   // dashboards, phones, tablets, desktops, etc.
-  var DASHBOARD = 'crestron-display';
-  if (location.pathname.indexOf(DASHBOARD) === -1) return;
+  // Note: 'crestron-lite' is NOT listed here — it handles idle/buttons internally.
+  var DASHBOARDS = ['crestron-display', 'crestron-v6'];
+  var DASHBOARD = null;
+  for (var i = 0; i < DASHBOARDS.length; i++) {
+    if (location.pathname.indexOf(DASHBOARDS[i]) !== -1) {
+      DASHBOARD = DASHBOARDS[i];
+      break;
+    }
+  }
+  if (!DASHBOARD) return;
 
   // ── Configuration ──────────────────────────────────────────────
   var IDLE_TIMEOUT      = 120000;  // 2 min of no touch → photo frame
-  var REFRESH_INTERVAL  = 900000;  // 15 min — hard refresh to combat WebView memory leaks
+  var REFRESH_INTERVAL  = 300000;  // 5 min — TEST: hard refresh to combat WebView memory leaks
   var HOME_PATH      = '/' + DASHBOARD + '/home';
   var PHOTOS_PATH    = '/' + DASHBOARD + '/photos';
 
@@ -66,11 +74,10 @@
   function startIdleTimer() {
     clearTimeout(idleTimer);
     cancelRefresh();
-    // SOAK TEST: disabled idle→photos to isolate dashboard stability
-    // idleTimer = setTimeout(function() {
-    //   navigateTo(PHOTOS_PATH);
-    //   scheduleRefresh();
-    // }, IDLE_TIMEOUT);
+    idleTimer = setTimeout(function() {
+      navigateTo(PHOTOS_PATH);
+      scheduleRefresh();
+    }, IDLE_TIMEOUT);
   }
 
   // ── WebView memory management ──────────────────────────────────

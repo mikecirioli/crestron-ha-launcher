@@ -292,7 +292,16 @@
     var cam = CAMERAS[curCam];
     camLabel.textContent = cam.name;
     signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
-      if (url) camImg.src = url;
+      if (!url) return;
+      var newImg = new Image();
+      newImg.onload = function() {
+        newImg.id = camImg.id;
+        newImg.alt = camImg.alt;
+        camImg.parentNode.replaceChild(newImg, camImg);
+        camImg.src = ''; // help GC
+        camImg = newImg;
+      };
+      newImg.src = url;
     });
   }
 

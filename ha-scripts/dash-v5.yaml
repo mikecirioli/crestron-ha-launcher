@@ -1,0 +1,185 @@
+# ═══════════════════════════════════════════════════════════════════
+# Crestron Display Dashboard v5 - Mushroom Aesthetic Hybrid
+# Combines v4's strict dimensions (1280x800) with Reddit UI ideas
+# ═══════════════════════════════════════════════════════════════════
+
+wallpanel:
+  enabled: true
+  hide_toolbar: true
+  show_toolbar_on_hover: true
+  hide_sidebar: true
+  fullscreen: false
+  idle_time: 0
+
+title: Crestron Hybrid
+views:
+  - title: Home
+    path: home
+    type: custom:grid-layout
+    layout:
+      # 1280px width split: ~610px Camera | ~280px Controls | ~360px Calendar
+      grid-template-columns: 2fr 0.9fr 1.2fr
+      grid-template-rows: 54px 560px 120px
+      height: 100vh
+      margin: 0
+      padding: 0
+      grid-gap: 12px
+    cards:
+
+      # ═══ ROW 1: Clean Minimal Chips Bar (54px) ════════════════════
+      - type: custom:mushroom-chips-card
+        view_layout:
+          grid-column: 1 / -1
+          grid-row: 1
+        chips:
+          - type: template
+            icon: mdi:clock-outline
+            content: "{{ now().strftime('%-I:%M %p') }}"
+            tap_action:
+              action: none
+          - type: template
+            icon: mdi:calendar-today
+            content: "{{ now().strftime('%a, %b %-d') }}"
+            tap_action:
+              action: none
+          - type: spacer
+          # (Device chips moved to touch-friendly Mushroom cards below)
+        card_mod:
+          style: |
+            :host { height: 54px !important; max-height: 54px !important; overflow: hidden !important; }
+            ha-card { 
+              height: 54px !important; 
+              padding: 6px 16px !important; 
+              background: transparent !important;
+              border: none !important;
+            }
+
+      # ═══ ROW 2, COL 1: Camera Iframe ══════════════════════════════
+      - type: iframe
+        url: /local/camera-panel.html?v=5
+        aspect_ratio: "4:3"
+        view_layout:
+          grid-column: 1
+          grid-row: 2
+        card_mod:
+          style: |
+            ha-card { 
+              height: 100% !important; 
+              border: none !important; 
+              border-radius: 16px !important; 
+              overflow: hidden !important; 
+            }
+            iframe { height: 100% !important; }
+
+      # ═══ ROW 2, COL 2: Blocky Controls (Reddit UI Idea) ═══════════
+      - type: vertical-stack
+        view_layout:
+          grid-column: 2
+          grid-row: 2
+        cards:
+          # Weather
+          - type: weather-forecast
+            entity: weather.forecast_home
+            forecast_type: daily
+            show_current: true
+            show_forecast: true
+            card_mod:
+              style: |
+                ha-card { 
+                  height: 170px !important; 
+                  border-radius: 16px !important; 
+                  padding: 8px !important; 
+                  box-shadow: none !important;
+                  background: var(--ha-card-background, rgba(30,30,30,0.6));
+                }
+          
+          # Dedicated Vacuum Card (More prominent than a chip)
+          - type: custom:mushroom-vacuum-card
+            entity: vacuum.sweeping_robot
+            name: Roesy
+            commands:
+              - return_home
+              - start_pause
+              - locate
+            layout: horizontal
+            card_mod:
+              style: |
+                ha-card { border-radius: 16px !important; box-shadow: none !important; margin-top: 4px; }
+
+          # Grid of Vertical Device Buttons (Like the image's layout)
+          - type: horizontal-stack
+            cards:
+              - type: custom:mushroom-entity-card
+                entity: light.ceiling_light_rgbcw_8f2721
+                name: Sink
+                icon: mdi:vanity-light
+                layout: vertical
+                tap_action: { action: toggle }
+                card_mod:
+                  style: |
+                    ha-card { border-radius: 16px !important; box-shadow: none !important; }
+              - type: custom:mushroom-entity-card
+                entity: switch.smart_plug
+                name: Fountain
+                icon: mdi:fountain
+                layout: vertical
+                tap_action: { action: toggle }
+                card_mod:
+                  style: |
+                    ha-card { border-radius: 16px !important; box-shadow: none !important; }
+
+          - type: horizontal-stack
+            cards:
+              - type: custom:mushroom-entity-card
+                entity: switch.smart_plug_2
+                name: Pond
+                icon: mdi:fishbowl
+                layout: vertical
+                tap_action: { action: toggle }
+                card_mod:
+                  style: |
+                    ha-card { border-radius: 16px !important; box-shadow: none !important; }
+              - type: custom:mushroom-entity-card
+                entity: switch.smart_plug_3
+                name: Tree
+                icon: mdi:pine-tree
+                layout: vertical
+                tap_action: { action: toggle }
+                card_mod:
+                  style: |
+                    ha-card { border-radius: 16px !important; box-shadow: none !important; }
+
+      # ═══ ROW 2, COL 3: Calendar Iframe ════════════════════════════
+      - type: iframe
+        url: /local/calendar-panel.html?v=4
+        aspect_ratio: "1:1"
+        view_layout:
+          grid-column: 3
+          grid-row: 2
+        card_mod:
+          style: |
+            ha-card { 
+              height: 100% !important; 
+              border: none !important; 
+              border-radius: 16px !important; 
+              overflow: hidden !important; 
+            }
+            iframe { height: 100% !important; }
+
+      # ═══ ROW 3: Detection Strip Iframe (120px) ════════════════════
+      - type: iframe
+        url: /local/detection-strip.html?v=4
+        aspect_ratio: "100:10"
+        view_layout:
+          grid-column: 1 / -1
+          grid-row: 3
+        card_mod:
+          style: |
+            ha-card { 
+              height: 120px !important; 
+              max-height: 120px !important; 
+              border: none !important; 
+              border-radius: 16px !important; 
+              overflow: hidden !important; 
+            }
+            iframe { height: 120px !important; }

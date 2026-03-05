@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Photo Frame</title>
+<title>Photo Frame Lite</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -15,36 +15,31 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
-  /* ── Photo layers (crossfade between two) ─────────────────── */
-  .photo {
+  /* ── Single photo layer (fade in/out) ───────────────────── */
+  #photo {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
     object-fit: cover;
     opacity: 0;
-    transition: opacity 2s ease-in-out;
-    z-index: 1;
+    transition: opacity 1.5s ease-in-out;
   }
-  .photo.active {
+  #photo.visible {
     opacity: 1;
-    z-index: 2;
   }
 
-  /* ── Info overlay (clock + weather + forecast) ─────────────── */
+  /* ── Info overlay ───────────────────────────────────────── */
   .overlay {
     position: fixed;
     bottom: 40px;
     right: 40px;
     background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     color: #fff;
     padding: 16px 24px;
     border-radius: 14px;
     z-index: 10;
     text-align: right;
-    /* Anti-burn-in drift */
-    animation: drift 180s infinite linear alternate;
+    transition: bottom 0.8s ease, right 0.8s ease, top 0.8s ease, left 0.8s ease;
   }
 
   .overlay .clock {
@@ -107,16 +102,7 @@
     opacity: 0.7;
   }
 
-  /* ── Anti-burn-in: slow drift across the screen ───────────── */
-  @keyframes drift {
-    0%   { transform: translate(0px, 0px); }
-    25%  { transform: translate(-55vw, -35vh); }
-    50%  { transform: translate(-15vw, -65vh); }
-    75%  { transform: translate(-70vw, -15vh); }
-    100% { transform: translate(-35vw, -50vh); }
-  }
-
-  /* ── Fallback message when no images ──────────────────────── */
+  /* ── Fallback message ───────────────────────────────────── */
   .fallback {
     position: absolute;
     top: 50%; left: 50%;
@@ -129,10 +115,9 @@
 </style>
 </head>
 <body>
-  <img class="photo active" id="photo-a" alt="">
-  <img class="photo" id="photo-b" alt="">
+  <img id="photo" alt="">
 
-  <div class="overlay">
+  <div class="overlay" id="overlay">
     <div class="clock" id="clock"></div>
     <div class="date" id="date"></div>
     <div class="weather" id="weather"></div>
@@ -151,12 +136,12 @@
     // ── Configuration ────────────────────────────────────────
     var IMAGE_LIST_URL = '/local/photoframe-images.json';
     var WEATHER_ENTITY = 'weather.forecast_home';
-    var DISPLAY_TIME   = 15000;  // 15 seconds per photo
+    var DISPLAY_TIME   = 30000;  // 30 seconds per photo (half the swaps)
     var LIST_REFRESH   = 3600000; // re-fetch image list every hour
     var FORECAST_DAYS  = 3;
+    var DRIFT_INTERVAL = 120000; // reposition overlay every 2 min (burn-in)
 
-    // Opt-in periodic parent-page reload to reclaim leaked memory.
-    // Usage: photoframe.html?reload=900 (seconds). Omit param = no reload.
+    // Opt-in periodic parent-page reload for memory management.
     var reloadParam = (new URLSearchParams(location.search)).get('reload');
     if (reloadParam) {
       var reloadMs = parseInt(reloadParam, 10) * 1000;
@@ -170,10 +155,11 @@
     // ── State ────────────────────────────────────────────────
     var images = [];
     var currentIndex = -1;
-    var activeSlot = 'a';
-    var photoA = document.getElementById('photo-a');
-    var photoB = document.getElementById('photo-b');
+    var photo = document.getElementById('photo');
     var fallback = document.getElementById('fallback');
+    var overlay = document.getElementById('overlay');
+    var loadTimer = null;
+    var slideTimer = null;
 
     // ── Image list loading ───────────────────────────────────
     function loadImageList() {
@@ -184,28 +170,26 @@
             images = list;
             fallback.style.display = 'none';
             if (currentIndex === -1) {
-              // First load — start the slideshow
               shuffle(images);
               showNext();
-              setInterval(showNext, DISPLAY_TIME);
+              slideTimer = setInterval(showNext, DISPLAY_TIME);
             }
           } else {
             fallback.style.display = 'block';
           }
         })
         .catch(function(e) {
-          console.error('Photo frame: failed to load image list', e);
+          console.error('Photo frame lite: failed to load image list', e);
           if (images.length === 0) {
             fallback.style.display = 'block';
           }
         });
     }
 
-    // Load now, then refresh periodically (picks up new photos)
     loadImageList();
     setInterval(loadImageList, LIST_REFRESH);
 
-    // ── Slideshow ────────────────────────────────────────────
+    // ── Slideshow (single img, fade out → swap → fade in) ───
     function shuffle(arr) {
       for (var i = arr.length - 1; i > 0; i--) {
         var j = Math.floor(Math.random() * (i + 1));
@@ -215,46 +199,43 @@
       }
     }
 
-    var loadTimer = null;
-
     function showNext() {
       if (images.length === 0) return;
 
       currentIndex = (currentIndex + 1) % images.length;
-      // Reshuffle when we've shown all images
       if (currentIndex === 0 && images.length > 1) shuffle(images);
 
-      var incoming = activeSlot === 'a' ? photoB : photoA;
-      var outgoing = activeSlot === 'a' ? photoA : photoB;
+      // Fade out
+      photo.classList.remove('visible');
 
-      // Clear previous state to force a fresh load
+      // After fade-out completes, swap image
       clearTimeout(loadTimer);
-      incoming.onload = null;
-      incoming.onerror = null;
-      incoming.src = '';
+      setTimeout(function() {
+        // Release old bitmap
+        photo.onload = null;
+        photo.onerror = null;
+        photo.src = '';
 
-      // Preload the image before transitioning
-      incoming.onload = function() {
-        clearTimeout(loadTimer);
-        incoming.classList.add('active');
-        outgoing.classList.remove('active');
-        activeSlot = activeSlot === 'a' ? 'b' : 'a';
-      };
-      incoming.onerror = function() {
-        clearTimeout(loadTimer);
-        // Skip broken images
-        if (images.length > 1) showNext();
-      };
+        // Load new image
+        photo.onload = function() {
+          clearTimeout(loadTimer);
+          photo.classList.add('visible');
+        };
+        photo.onerror = function() {
+          clearTimeout(loadTimer);
+          if (images.length > 1) showNext();
+        };
 
-      // Timeout: if image doesn't load in 8s, skip it
-      loadTimer = setTimeout(function() {
-        incoming.onload = null;
-        incoming.onerror = null;
-        incoming.src = '';
-        if (images.length > 1) showNext();
-      }, 8000);
+        // Timeout: skip if image doesn't load in 8s
+        loadTimer = setTimeout(function() {
+          photo.onload = null;
+          photo.onerror = null;
+          photo.src = '';
+          if (images.length > 1) showNext();
+        }, 8000);
 
-      incoming.src = images[currentIndex];
+        photo.src = images[currentIndex];
+      }, 1600); // wait for fade-out transition (1.5s + buffer)
     }
 
     // ── Clock + Date ─────────────────────────────────────────
@@ -269,6 +250,27 @@
     }
     updateClock();
     setInterval(updateClock, 30000);
+
+    // ── Anti-burn-in: reposition overlay periodically ────────
+    var positions = [
+      { bottom: '40px', right: '40px', top: 'auto', left: 'auto' },
+      { bottom: 'auto', right: '40px', top: '40px', left: 'auto' },
+      { bottom: 'auto', right: 'auto', top: '40px', left: '40px' },
+      { bottom: '40px', right: 'auto', top: 'auto', left: '40px' },
+      { bottom: '40px', right: '40px', top: 'auto', left: 'auto' }
+    ];
+    var posIndex = 0;
+
+    function driftOverlay() {
+      posIndex = (posIndex + 1) % positions.length;
+      var pos = positions[posIndex];
+      overlay.style.bottom = pos.bottom;
+      overlay.style.right = pos.right;
+      overlay.style.top = pos.top;
+      overlay.style.left = pos.left;
+      overlay.style.textAlign = (pos.left !== 'auto') ? 'left' : 'right';
+    }
+    setInterval(driftOverlay, DRIFT_INTERVAL);
 
     // ── Helpers ──────────────────────────────────────────────
     function getHass() {
@@ -292,7 +294,7 @@
       return d.toLocaleDateString([], { weekday: 'short' });
     }
 
-    // ── Current weather (reads from parent HA frontend) ──────
+    // ── Current weather ──────────────────────────────────────
     function updateWeather() {
       var hass = getHass();
       if (!hass) return;
@@ -308,9 +310,9 @@
         temp + unit + '  \u00B7  ' + condition;
     }
     updateWeather();
-    setInterval(updateWeather, 300000); // every 5 minutes
+    setInterval(updateWeather, 300000);
 
-    // ── 3-day forecast (via HA websocket subscription) ───────
+    // ── 3-day forecast ───────────────────────────────────────
     function updateForecast() {
       var hass = getHass();
       if (!hass || !hass.connection) return;
@@ -328,21 +330,17 @@
           }
         );
       } catch (e) {
-        // Fallback: try reading forecast attribute (older HA)
         try {
           var entity = hass.states[WEATHER_ENTITY];
           if (entity && entity.attributes.forecast) {
             renderForecast(entity.attributes.forecast);
           }
-        } catch (e2) {
-          // silently skip
-        }
+        } catch (e2) {}
       }
     }
 
     function renderForecast(forecast) {
       var el = document.getElementById('forecast');
-      // Skip today (index 0), show next FORECAST_DAYS
       var days = forecast.slice(1, FORECAST_DAYS + 1);
       if (days.length === 0) return;
 
@@ -366,7 +364,6 @@
       el.innerHTML = html;
     }
 
-    // Wait a moment for parent HA to be ready, then subscribe
     setTimeout(updateForecast, 3000);
 
   })();

@@ -1,0 +1,39 @@
+# ═══════════════════════════════════════════════════════════════════
+# Crestron Display Dashboard - Lite (TSW-1060: 1280×800)
+# ═══════════════════════════════════════════════════════════════════
+# Single-iframe approach: one HTML page handles dashboard + screensaver.
+# Eliminates HA card framework, multiple iframes, WebSocket subscriptions.
+# All rendering is vanilla JS in a single document context.
+#
+# Requires: /config/www/panel-lite.html
+# Does NOT require: layout-card, mushroom, card-mod
+# ═══════════════════════════════════════════════════════════════════
+
+wallpanel:
+  enabled: true
+  hide_toolbar: true
+  show_toolbar_on_hover: true
+  hide_sidebar: true
+  fullscreen: false
+  idle_time: 0
+
+title: Crestron Lite
+views:
+  - title: Home
+    path: home
+    type: panel
+    cards:
+      - type: iframe
+        url: /local/panel-lite.html?reload=300
+        aspect_ratio: "16:10"
+        card_mod:
+          style: |
+            ha-card {
+              height: 100vh !important;
+              border: none !important;
+              box-shadow: none !important;
+              border-radius: 0 !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+            }
