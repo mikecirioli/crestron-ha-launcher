@@ -16,6 +16,14 @@ shell_command:
   # [EXISTING] Close the panel browser
   crestron_close_browser: >-
     python3 /config/scripts/crestron_cmd.py 'BROWSERCLOSE'
+  # [NEW] Full browser restart — kills WebView process, reclaims all memory
+  # BROWSERCLOSE fully terminates generalweb (confirmed via TASKSTAT).
+  # Wait 5s for process cleanup, then reopen. Use on a 2-hour timer.
+  crestron_restart_browser: >-
+    python3 /config/scripts/crestron_cmd.py 'BROWSERCLOSE'
+    && sleep 5
+    && python3 /config/scripts/crestron_cmd.py
+    'BROWSEROPEN http://<HA_IP>:8123/crestron-display/home'
   # [EXISTING] Panel standby controls
   crestron_standby: >-
     python3 /config/scripts/crestron_cmd.py 'standby'
@@ -24,6 +32,52 @@ shell_command:
   # [NEW] Photo frame image list builder
   photoframe_build_list: >-
     python3 /config/scripts/photoframe_build_list.py
+
+  # ── Diagnostics ──────────────────────────────────────────────────
+  # These commands query panel health via SSH. Safe to call anytime.
+  crestron_ramfree: >-
+    python3 /config/scripts/crestron_cmd.py 'RAMFREE'
+  crestron_cpuload: >-
+    python3 /config/scripts/crestron_cmd.py 'CPULOAD'
+  crestron_taskstat: >-
+    python3 /config/scripts/crestron_cmd.py 'TASKSTAT'
+  crestron_temperature: >-
+    python3 /config/scripts/crestron_cmd.py 'TEMPERATURE'
+  crestron_sdcardstatus: >-
+    python3 /config/scripts/crestron_cmd.py 'SDCARDSTATUS'
+  crestron_uptime: >-
+    python3 /config/scripts/crestron_cmd.py 'UPTIME'
+  crestron_netstat: >-
+    python3 /config/scripts/crestron_cmd.py 'NETSTAT'
+  crestron_nvramreboot: >-
+    python3 /config/scripts/crestron_cmd.py 'NVRAMREBOOT'
+
+  # ── Logging ──────────────────────────────────────────────────────
+  crestron_syslog_print: >-
+    python3 /config/scripts/crestron_cmd.py 'syslog print'
+  crestron_syslog_clear: >-
+    python3 /config/scripts/crestron_cmd.py 'syslog clear'
+  crestron_errlog: >-
+    python3 /config/scripts/crestron_cmd.py 'ERRlog'
+  crestron_errstatus: >-
+    python3 /config/scripts/crestron_cmd.py 'ERRSTATUS'
+
+  # ── Debug controls ───────────────────────────────────────────────
+  # Core 3 debug was found at max verbosity (all 32 masks ON,
+  # level 0xFFFFFFFF) — likely contributing to WebView instability.
+  # These commands allow toggling debug on/off remotely.
+  crestron_c3debug_off: >-
+    python3 /config/scripts/crestron_cmd.py 'C3DLEVEL 0'
+  crestron_c3debug_on: >-
+    python3 /config/scripts/crestron_cmd.py 'C3DLEVEL 1'
+  crestron_c3debug_status: >-
+    python3 /config/scripts/crestron_cmd.py 'C3DLEVEL'
+  crestron_remote_web_connections: >-
+    python3 /config/scripts/crestron_cmd.py 'REMOTEWEBConnections'
+  crestron_memcheck_status: >-
+    python3 /config/scripts/crestron_cmd.py 'MEMCHECKENABLE'
+  crestron_wbsstream_status: >-
+    python3 /config/scripts/crestron_cmd.py 'WBSSTREAM'
 
 # ── Input select: camera cycling ─────────────────────────────────
 input_select:

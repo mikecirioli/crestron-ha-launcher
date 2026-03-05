@@ -16,20 +16,28 @@
     - trigger: webhook
       webhook_id: crestron-open-browser
   actions:
+    - action: shell_command.crestron_syslog_clear
+    - action: shell_command.crestron_c3debug_off
+    - delay:
+        seconds: 2
     - action: shell_command.crestron_open_browser
 
 # ── 2. Periodic browser restart (memory cleanup) ─────────────────
-# Every 6 hours, fully restart the panel browser to clear any
-# accumulated memory. The browser reopens to the dashboard, and
-# idle detection will send it to the photo frame after 30s.
+# Every 2 hours, fully restart the panel browser. BROWSERCLOSE kills
+# the generalweb process entirely (confirmed via TASKSTAT), reclaiming
+# all leaked WebView memory. BROWSEROPEN spawns a fresh process.
+# The panel froze at ~3.5 hours with panel-lite; 2-hour cycle
+# provides comfortable margin.
 - alias: "Crestron: Periodic browser restart"
   description: >-
-    Restarts the Crestron panel browser every 6 hours to prevent
-    memory buildup from long-running camera streams and JS.
+    Restarts the Crestron panel browser every 2 hours to prevent
+    WebView memory leaks from accumulating. BROWSERCLOSE fully kills
+    the generalweb process; BROWSEROPEN spawns a fresh one.
   triggers:
     - trigger: time_pattern
-      hours: "/6"
+      hours: "/2"
   actions:
+    - action: shell_command.crestron_syslog_clear
     - action: shell_command.crestron_close_browser
     - delay:
         seconds: 5

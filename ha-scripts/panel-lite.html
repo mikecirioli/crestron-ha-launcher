@@ -11,8 +11,8 @@
     background: #111318;
     color: #e1e1e1;
     overflow: hidden;
-    width: 1280px;
-    height: 800px;
+    width: 100vw;
+    height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
@@ -20,9 +20,10 @@
      DASHBOARD VIEW
      ══════════════════════════════════════════════════════════ */
   #dashboard {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    grid-template-rows: 54px 1fr 120px;
+    display: -webkit-flex;
+    display: flex;
+    -webkit-flex-direction: column;
+    flex-direction: column;
     width: 100%;
     height: 100%;
   }
@@ -30,14 +31,26 @@
 
   /* ── Row 1: Chips bar ──────────────────────────────────── */
   .chips-bar {
-    grid-column: 1 / -1;
-    grid-row: 1;
+    display: -webkit-flex;
     display: flex;
+    -webkit-align-items: center;
     align-items: center;
     padding: 0 16px;
     gap: 8px;
     height: 54px;
+    -webkit-flex: 0 0 54px;
+    flex: 0 0 54px;
     background: rgba(0,0,0,0.3);
+  }
+
+  /* ── Row 2: Main content (camera + info) ─────────────── */
+  .main-row {
+    display: -webkit-flex;
+    display: flex;
+    -webkit-flex: 1 1 auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .chip {
@@ -66,17 +79,20 @@
 
   /* ── Row 2, Col 1: Camera ──────────────────────────────── */
   .camera-area {
-    grid-column: 1;
-    grid-row: 2;
+    -webkit-flex: 2 1 0%;
+    flex: 2 1 0%;
     position: relative;
     overflow: hidden;
     background: #000;
   }
-  .camera-area img {
+  .cam-layer {
+    position: absolute;
+    top: 0; left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    display: block;
+    -webkit-transition: opacity 0.3s;
+    transition: opacity 0.3s;
   }
   .camera-label {
     position: absolute;
@@ -92,9 +108,11 @@
 
   /* ── Row 2, Col 2: Info column ─────────────────────────── */
   .info-area {
-    grid-column: 2;
-    grid-row: 2;
+    -webkit-flex: 1 1 0%;
+    flex: 1 1 0%;
+    display: -webkit-flex;
     display: flex;
+    -webkit-flex-direction: column;
     flex-direction: column;
     overflow: hidden;
   }
@@ -187,19 +205,22 @@
 
   /* ── Row 3: Detection strip ────────────────────────────── */
   .detection-strip {
-    grid-column: 1 / -1;
-    grid-row: 3;
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    display: -webkit-flex;
+    display: flex;
     gap: 3px;
     height: 120px;
-    max-height: 120px;
+    -webkit-flex: 0 0 120px;
+    flex: 0 0 120px;
     overflow: hidden;
     background: #111318;
   }
   .det {
+    display: -webkit-flex;
     display: flex;
+    -webkit-flex-direction: column;
     flex-direction: column;
+    -webkit-flex: 1 1 0%;
+    flex: 1 1 0%;
     overflow: hidden;
     background: #1a1a1a;
     border-radius: 3px;
@@ -311,16 +332,22 @@
 </head>
 <body>
 
+  <!-- ════ DEBUG STATUS (visible until dashboard renders) ══ -->
+  <div id="dbg" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#000;color:#0f0;font:12px monospace;padding:8px;white-space:pre-wrap;max-height:50%;overflow-y:auto"></div>
+
   <!-- ════ DASHBOARD ═══════════════════════════════════════ -->
   <div id="dashboard">
     <div class="chips-bar" id="chips-bar"></div>
-    <div class="camera-area">
-      <img id="cam-img" alt="">
-      <div class="camera-label" id="cam-label"></div>
-    </div>
-    <div class="info-area">
-      <div class="weather-section" id="weather-section"></div>
-      <div class="calendar-section" id="calendar-section"></div>
+    <div class="main-row">
+      <div class="camera-area">
+        <img id="cam-img-a" class="cam-layer" alt="">
+        <img id="cam-img-b" class="cam-layer" style="opacity:0" alt="">
+        <div class="camera-label" id="cam-label"></div>
+      </div>
+      <div class="info-area">
+        <div class="weather-section" id="weather-section"></div>
+        <div class="calendar-section" id="calendar-section"></div>
+      </div>
     </div>
     <div class="detection-strip" id="detection-strip"></div>
   </div>
@@ -338,12 +365,19 @@
   </div>
 
 <script>
+// Early diagnostic — runs even if main script has parse errors
+document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + navigator.userAgent;
+</script>
+<script>
 (function() {
   'use strict';
 
   // ══════════════════════════════════════════════════════════
   // CONFIGURATION
   // ══════════════════════════════════════════════════════════
+
+  var HA_URL   = '';  // HA base URL (auto-detected from page origin if empty; override via ?ha_url=)
+  var HA_TOKEN = '';  // Long-lived access token
 
   var CAMERAS = [
     { entity: 'camera.frontporch', name: 'Front Porch' },
@@ -396,27 +430,57 @@
   var IDLE_TIMEOUT      = 120000; // 2 min → screensaver
   var SS_DRIFT_MS       = 120000; // reposition overlay (2 min)
   var FORECAST_DAYS     = 3;
+  var WS_RECONNECT_MS   = 5000;  // reconnect delay on close/error
 
   // 1x1 transparent GIF — forces Chromium 95 to actually free decoded bitmap
   // (img.src = '' does NOT release GPU memory in this WebView version)
   var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 
+  // URL params override hardcoded config (manual parser — URLSearchParams
+  // not available in standalone Chromium on TSW-1060)
+  function getParam(name) {
+    var match = location.search.match(new RegExp('[?&]' + name + '=([^&]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  var urlToken = getParam('token');
+  var urlHaUrl = getParam('ha_url');
+  if (urlToken) HA_TOKEN = urlToken;
+  if (urlHaUrl) HA_URL = urlHaUrl.replace(/\/+$/, '');  // strip trailing slash
+
   // Opt-in periodic reload for memory management
-  var reloadParam = (new URLSearchParams(location.search)).get('reload');
+  var reloadParam = getParam('reload');
   if (reloadParam) {
     var reloadMs = parseInt(reloadParam, 10) * 1000;
     if (reloadMs > 0) {
-      setTimeout(function() {
-        try { window.parent.location.reload(); } catch (e) { location.reload(); }
-      }, reloadMs);
+      setTimeout(function() { location.reload(); }, reloadMs);
     }
   }
+
+  // ══════════════════════════════════════════════════════════
+  // DEBUG STATUS OVERLAY
+  // ══════════════════════════════════════════════════════════
+
+  var dbgEl = document.getElementById('dbg');
+  var dbgLines = [];
+  function dbg(msg) {
+    var ts = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    dbgLines.push('[' + ts + '] ' + msg);
+    if (dbgLines.length > 30) dbgLines.shift();
+    if (dbgEl) dbgEl.textContent = dbgLines.join('\n');
+  }
+  dbg('page loaded');
+  dbg('UA: ' + navigator.userAgent);
+  dbg('URL: ' + location.href);
+  dbg('HA_URL: ' + (HA_URL || '(auto-detect pending)'));
+  dbg('HA_TOKEN: ' + (HA_TOKEN ? HA_TOKEN.substring(0, 20) + '...' : 'MISSING'));
+  dbg('WebSocket: ' + (typeof WebSocket));
+  dbg('fetch: ' + (typeof fetch));
 
   // ══════════════════════════════════════════════════════════
   // STATE
   // ══════════════════════════════════════════════════════════
 
-  var hass = null;
+  var states = {};   // entity_id → state object (our own cache)
   var curCam = -1;
   var idleTimer = null;
   var manualScreensaver = false;
@@ -435,30 +499,171 @@
   // DOM refs
   var dashEl = document.getElementById('dashboard');
   var ssEl = document.getElementById('screensaver');
-  var camImg = document.getElementById('cam-img');
+  var camImgA = document.getElementById('cam-img-a');
+  var camImgB = document.getElementById('cam-img-b');
+  var camFront = 'a';  // which layer is currently visible
   var camLabel = document.getElementById('cam-label');
   var ssPhoto = document.getElementById('ss-photo');
   var ssOverlay = document.getElementById('ss-overlay');
 
   // ══════════════════════════════════════════════════════════
+  // WEBSOCKET CONNECTION
+  // ══════════════════════════════════════════════════════════
+
+  var ws = null;
+  var wsId = 1;        // incrementing message ID
+  var wsPending = {};  // id → {callback, subscription} map
+  var wsReady = false;
+  var wsReconnectTimer = null;
+
+  function wsConnect() {
+    wsReady = false;
+    wsId = 1;
+    wsPending = {};
+
+    var wsUrl = HA_URL.replace(/^http/, 'ws') + '/api/websocket';
+    dbg('ws connecting: ' + wsUrl);
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (e) {
+      dbg('ws constructor error: ' + e.message);
+      return;
+    }
+    dbg('ws object created, readyState=' + ws.readyState);
+
+    ws.onopen = function() {
+      dbg('ws onopen, readyState=' + ws.readyState);
+    };
+
+    ws.onmessage = function(evt) {
+      var msg;
+      try { msg = JSON.parse(evt.data); } catch (e) { return; }
+
+      if (msg.type === 'auth_required') {
+        dbg('ws auth_required, sending token...');
+        ws.send(JSON.stringify({ type: 'auth', access_token: HA_TOKEN }));
+        return;
+      }
+
+      if (msg.type === 'auth_ok') {
+        dbg('ws auth_ok! bootstrapping...');
+        wsReady = true;
+        wsBootstrap();
+        return;
+      }
+
+      if (msg.type === 'auth_invalid') {
+        dbg('ws AUTH FAILED: ' + msg.message);
+        ws.close();
+        return;
+      }
+
+      // Route responses and subscription events by id
+      if (msg.id && wsPending[msg.id]) {
+        var handler = wsPending[msg.id];
+        if (msg.type === 'result') {
+          if (handler.callback) handler.callback(msg.success ? msg.result : null);
+          if (!handler.subscription) delete wsPending[msg.id];
+        } else if (msg.type === 'event') {
+          if (handler.callback) handler.callback(msg.event);
+        }
+      }
+    };
+
+    ws.onclose = function(evt) {
+      dbg('ws closed: code=' + evt.code + ' reason=' + (evt.reason || 'none'));
+      wsReady = false;
+      ws = null;
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = setTimeout(wsConnect, WS_RECONNECT_MS);
+    };
+
+    ws.onerror = function(evt) {
+      dbg('ws error event');
+    };
+  }
+
+  function wsSend(msg, callback, subscription) {
+    if (!ws || !wsReady) return 0;
+    var id = wsId++;
+    msg.id = id;
+    if (callback) wsPending[id] = { callback: callback, subscription: !!subscription };
+    ws.send(JSON.stringify(msg));
+    return id;
+  }
+
+  function wsCallService(domain, service, data, target) {
+    var msg = { type: 'call_service', domain: domain, service: service };
+    if (data) msg.service_data = data;
+    if (target) msg.target = target;
+    wsSend(msg);
+  }
+
+  function wsBootstrap() {
+    // 1. Fetch all states
+    dbg('get_states...');
+    wsSend({ type: 'get_states' }, function(result) {
+      if (!result) { dbg('get_states FAILED'); return; }
+      states = {};
+      for (var i = 0; i < result.length; i++) {
+        states[result[i].entity_id] = result[i];
+      }
+      dbg('got ' + result.length + ' states');
+      // 2. Subscribe to state changes (keeps cache fresh + drives detections)
+      wsSend(
+        { type: 'subscribe_events', event_type: 'state_changed' },
+        function(evt) {
+          if (!evt || !evt.data) return;
+          var eid = evt.data.entity_id;
+          if (evt.data.new_state) {
+            states[eid] = evt.data.new_state;
+          } else {
+            delete states[eid]; // entity removed
+          }
+          // Drive detection strip for detection entities
+          var detName = DETECT_ENTITIES[eid];
+          if (detName && evt.data.new_state) {
+            var ns = evt.data.new_state;
+            if (ns.attributes && ns.attributes.entity_picture) {
+              addDetection(eid, detName, ns.attributes.entity_picture, ns.last_changed);
+            }
+          }
+        },
+        true // subscription
+      );
+
+      // 3. Subscribe to weather forecast
+      wsSend(
+        { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: WEATHER_ENTITY },
+        function(msg) {
+          if (msg && msg.forecast) {
+            forecastData = msg.forecast;
+            renderWeather();
+            renderSSWeather();
+          }
+        },
+        true // subscription
+      );
+
+      // 4. Start the UI
+      init();
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════
   // HA HELPERS
   // ══════════════════════════════════════════════════════════
 
-  function getHass() {
-    try {
-      var ha = window.parent.document.querySelector('home-assistant');
-      return (ha && ha.hass) ? ha.hass : null;
-    } catch (e) { return null; }
-  }
-
   function signPath(path, cb) {
-    if (!hass || !hass.connection) return cb(null);
-    hass.connection.sendMessagePromise({
-      type: 'auth/sign_path',
-      path: path,
-      expires: 300
-    }).then(function(r) { cb(r.path); })
-      .catch(function() { cb(null); });
+    if (!wsReady) return cb(null);
+    wsSend(
+      { type: 'auth/sign_path', path: path, expires: 300 },
+      function(result) {
+        if (!result || !result.path) return cb(null);
+        // sign_path returns a relative path — make it absolute
+        cb(HA_URL + result.path);
+      }
+    );
   }
 
   function esc(s) {
@@ -597,9 +802,9 @@
   }, true);
 
   function cycleCamera(direction) {
-    if (!hass) return;
+    if (!wsReady) return;
     var svc = direction === 'next' ? 'select_next' : 'select_previous';
-    hass.callService('input_select', svc, { cycle: true },
+    wsCallService('input_select', svc, { cycle: true },
       { entity_id: CAMERA_SELECTOR });
   }
 
@@ -608,9 +813,6 @@
   // ══════════════════════════════════════════════════════════
 
   function renderChips() {
-    hass = getHass();
-    if (!hass) return;
-
     var now = new Date();
     var timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     var dateStr = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
@@ -622,7 +824,7 @@
 
     for (var i = 0; i < CHIPS.length; i++) {
       var c = CHIPS[i];
-      var st = hass.states[c.entity];
+      var st = states[c.entity];
       var isOn = st && (st.state === 'on' || st.state === 'cleaning' ||
                         st.state === 'home');
       html += '<div class="chip' + (isOn ? ' on' : '') + '">';
@@ -639,9 +841,7 @@
   // ══════════════════════════════════════════════════════════
 
   function syncCamera() {
-    hass = getHass();
-    if (!hass) return;
-    var s = hass.states[CAMERA_SELECTOR];
+    var s = states[CAMERA_SELECTOR];
     if (!s) return;
     for (var i = 0; i < CAMERAS.length; i++) {
       if (CAMERAS[i].entity === s.state) {
@@ -662,26 +862,24 @@
     camPending = true;
     var cam = CAMERAS[curCam];
     camLabel.textContent = cam.name;
+    dbg('cam: signing ' + cam.entity);
     signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
-      if (!url) { camPending = false; return; }
-      var tmp = new Image();
-      tmp.onload = function() {
-        camImg.src = BLANK;   // release old decoded bitmap
-        camImg.src = url;  // swap to preloaded (from cache)
-        tmp.onload = null; // break closure reference
-        tmp.onerror = null;
-        tmp.src = BLANK;      // release temp bitmap
-        tmp = null;
+      if (!url) { dbg('cam: signPath returned null'); camPending = false; return; }
+      // Load into the hidden (back) layer, then swap
+      var back = (camFront === 'a') ? camImgB : camImgA;
+      var front = (camFront === 'a') ? camImgA : camImgB;
+      back.onload = function() {
+        // Show back layer, hide front
+        back.style.opacity = '1';
+        front.style.opacity = '0';
+        camFront = (camFront === 'a') ? 'b' : 'a';
         camPending = false;
       };
-      tmp.onerror = function() {
-        tmp.onload = null;
-        tmp.onerror = null;
-        tmp.src = BLANK;
-        tmp = null;
+      back.onerror = function() {
+        dbg('cam: load FAILED');
         camPending = false;
       };
-      tmp.src = url;
+      back.src = url;
     });
   }
 
@@ -692,9 +890,7 @@
   var forecastData = null;
 
   function renderWeather() {
-    hass = getHass();
-    if (!hass) return;
-    var entity = hass.states[WEATHER_ENTITY];
+    var entity = states[WEATHER_ENTITY];
     if (!entity) return;
 
     var temp = Math.round(entity.attributes.temperature);
@@ -732,35 +928,14 @@
     document.getElementById('weather-section').innerHTML = html;
   }
 
-  function subscribeForecast() {
-    if (!hass || !hass.connection) return;
-    try {
-      hass.connection.subscribeMessage(
-        function(msg) {
-          if (msg && msg.forecast) {
-            forecastData = msg.forecast;
-            renderWeather();
-            renderSSWeather();
-          }
-        },
-        { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: WEATHER_ENTITY }
-      );
-    } catch (e) {
-      // Fallback for older HA
-      var entity = hass.states[WEATHER_ENTITY];
-      if (entity && entity.attributes.forecast) {
-        forecastData = entity.attributes.forecast;
-      }
-    }
-  }
+  // subscribeForecast is now handled in wsBootstrap()
 
   // ══════════════════════════════════════════════════════════
   // DASHBOARD: CALENDAR
   // ══════════════════════════════════════════════════════════
 
   function fetchCalendar() {
-    hass = getHass();
-    if (!hass) return;
+    if (!wsReady) return;
 
     var now = new Date();
     var start = now.toISOString();
@@ -769,7 +944,7 @@
     var pending = CALENDARS.length;
 
     CALENDARS.forEach(function(cal) {
-      if (!hass.states[cal.entity]) { if (--pending === 0) renderCalendar(all); return; }
+      if (!states[cal.entity]) { if (--pending === 0) renderCalendar(all); return; }
       var path = '/api/calendars/' + cal.entity
         + '?start=' + encodeURIComponent(start)
         + '&end=' + encodeURIComponent(end);
@@ -843,7 +1018,6 @@
 
   // FIFO queue: newest at index 0, max DETECT_SLOTS entries
   var detectionQueue = [];
-  var detectionSubscribed = false;
 
   function addDetection(entityId, name, picture, changedAt) {
     // Add to front of queue
@@ -905,40 +1079,15 @@
     }
   }
 
-  // Subscribe to state_changed, filter to detection entities only
-  function subscribeDetections() {
-    if (detectionSubscribed) return;
-    if (!hass || !hass.connection) return;
-    detectionSubscribed = true;
-
-    try {
-      hass.connection.subscribeMessage(
-        function(msg) {
-          if (!msg || !msg.event || !msg.event.data) return;
-          var eid = msg.event.data.entity_id;
-          var name = DETECT_ENTITIES[eid];
-          if (!name) return; // not one of our detection entities — ignore
-
-          var ns = msg.event.data.new_state;
-          if (!ns || !ns.attributes || !ns.attributes.entity_picture) return;
-
-          addDetection(eid, name, ns.attributes.entity_picture, ns.last_changed);
-        },
-        { type: 'subscribe_events', event_type: 'state_changed' }
-      );
-    } catch (e) {}
-  }
+  // subscribeDetections is now handled in wsBootstrap() via the unified state_changed subscription
 
   // Seed the strip with current detection states on startup
   function seedDetections() {
-    hass = getHass();
-    if (!hass) return;
-
     // Gather all detection entities that have pictures, sort by last_changed
     var initial = [];
     for (var i = 0; i < DETECTIONS.length; i++) {
       var det = DETECTIONS[i];
-      var st = hass.states[det.entity];
+      var st = states[det.entity];
       if (st && st.attributes && st.attributes.entity_picture) {
         initial.push({
           entity: det.entity,
@@ -977,7 +1126,6 @@
     renderChips();
     renderWeather();
     seedDetections();
-    subscribeDetections();
     fetchCalendar();
 
     camRefreshInterval = setInterval(refreshCamera, CAM_REFRESH_MS);
@@ -992,8 +1140,9 @@
   function stopDashboardTimers() {
     for (var i = 0; i < dashTimers.length; i++) clearInterval(dashTimers[i]);
     dashTimers = [];
-    // Release camera image
-    camImg.src = BLANK;
+    // Release camera images
+    camImgA.src = BLANK;
+    camImgB.src = BLANK;
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1001,11 +1150,14 @@
   // ══════════════════════════════════════════════════════════
 
   function loadPhotoList() {
-    fetch(IMAGE_LIST_URL + '?_=' + Date.now())
+    fetch(HA_URL + IMAGE_LIST_URL + '?_=' + Date.now())
       .then(function(r) { return r.json(); })
       .then(function(list) {
         if (list && list.length > 0) {
-          ssImages = list;
+          // Make relative paths absolute
+          ssImages = list.map(function(url) {
+            return (url.charAt(0) === '/') ? HA_URL + url : url;
+          });
           if (ssIndex === -1 && isScreensaver) {
             shuffle(ssImages);
             showNextPhoto();
@@ -1082,10 +1234,7 @@
   }
 
   function renderSSWeather() {
-    hass = getHass();
-    if (!hass) return;
-
-    var entity = hass.states[WEATHER_ENTITY];
+    var entity = states[WEATHER_ENTITY];
     if (!entity) return;
 
     var temp = Math.round(entity.attributes.temperature);
@@ -1216,10 +1365,11 @@
   // ══════════════════════════════════════════════════════════
 
   function init() {
-    hass = getHass();
-    if (!hass) return;
-
-    subscribeForecast();
+    dbg('init() — showing dashboard');
+    // Hide debug overlay after successful init (tap to show again)
+    setTimeout(function() {
+      if (dbgEl) dbgEl.style.display = 'none';
+    }, 15000);
     showDashboard();
 
     // Pre-load photo list so screensaver can start instantly
@@ -1227,18 +1377,24 @@
     setInterval(loadPhotoList, PHOTO_LIST_MS);
   }
 
-  // Wait for parent HA
-  (function wait() {
-    var ha;
-    try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
-    if (ha && ha.hass) return init();
-    var n = 0;
-    var iv = setInterval(function() {
-      try { ha = window.parent.document.querySelector('home-assistant'); } catch(e) {}
-      if (ha && ha.hass) { clearInterval(iv); init(); }
-      if (++n > 300) clearInterval(iv);
-    }, 100);
-  })();
+  // Catch all unhandled errors visibly
+  window.addEventListener('error', function(e) {
+    dbg('ERROR: ' + e.message + ' @ ' + (e.filename||'').split('/').pop() + ':' + e.lineno);
+  });
+
+  // Resolve HA_URL from page origin if served from HA /local/ path
+  if (!HA_URL) {
+    HA_URL = location.protocol + '//' + location.host;
+  }
+  dbg('HA_URL resolved: ' + HA_URL);
+
+  // Guard: token is required
+  if (!HA_TOKEN) {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#e1e1e1;font-size:20px;text-align:center;padding:40px">'
+      + 'No HA token configured.<br>Set HA_TOKEN in the HTML or pass <code>?token=YOUR_TOKEN</code> in the URL.</div>';
+  } else {
+    wsConnect();
+  }
 
 })();
 </script>
