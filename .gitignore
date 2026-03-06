@@ -2,3 +2,4 @@ node_modules/
 archive/
 package-lock.json
 clean-frigate.yaml
+screenshot-*.jpg

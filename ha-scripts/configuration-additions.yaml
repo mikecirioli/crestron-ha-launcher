@@ -36,6 +36,10 @@ shell_command:
   resize_photos: >-
     python3 /config/scripts/resize_photos.py
 
+  # [NEW] Take a screenshot from the panel, save as JPG to www/
+  crestron_screenshot: >-
+    python3 /config/scripts/crestron_screenshot.py
+
   # ── Diagnostics ──────────────────────────────────────────────────
   # These commands query panel health via SSH. Safe to call anytime.
   crestron_ramfree: >-
