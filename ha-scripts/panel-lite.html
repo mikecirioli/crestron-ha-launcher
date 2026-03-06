@@ -273,15 +273,12 @@
 
   .ss-overlay {
     position: fixed;
-    bottom: 40px;
-    right: 40px;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(0, 0, 0, 0.35);
     color: #fff;
     padding: 16px 24px;
     border-radius: 14px;
     z-index: 110;
     text-align: right;
-    transition: bottom 0.8s ease, right 0.8s ease, top 0.8s ease, left 0.8s ease;
   }
   .ss-overlay .ss-clock {
     font-size: 36px;
@@ -377,7 +374,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   // ══════════════════════════════════════════════════════════
 
   var HA_URL   = '';  // HA base URL (auto-detected from page origin if empty; override via ?ha_url=)
-  var HA_TOKEN = '';  // Long-lived access token
+  var HA_TOKEN = '';  // Long-lived access token — set via ?token= param or edit here
 
   var CAMERAS = [
     { entity: 'camera.frontporch', name: 'Front Porch' },
@@ -1331,25 +1328,25 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     document.getElementById('ss-debug').style.whiteSpace = 'pre';
   }
 
-  // Anti-burn-in: reposition overlay
-  var ssPositions = [
-    { bottom: '40px', right: '40px', top: 'auto', left: 'auto', align: 'right' },
-    { bottom: 'auto', right: '40px', top: '40px', left: 'auto', align: 'right' },
-    { bottom: 'auto', right: 'auto', top: '40px', left: '40px', align: 'left' },
-    { bottom: '40px', right: 'auto', top: 'auto', left: '40px', align: 'left' }
-  ];
-  var ssPosIndex = 0;
+  // Anti-burn-in: slow bounce (1 update/sec, ~1px/sec drift)
+  var bounceX = 40, bounceY = 40;
+  var bounceDX = 1, bounceDY = 0.7;
 
   setInterval(function() {
     if (!isScreensaver) return;
-    ssPosIndex = (ssPosIndex + 1) % ssPositions.length;
-    var pos = ssPositions[ssPosIndex];
-    ssOverlay.style.bottom = pos.bottom;
-    ssOverlay.style.right = pos.right;
-    ssOverlay.style.top = pos.top;
-    ssOverlay.style.left = pos.left;
-    ssOverlay.style.textAlign = pos.align;
-  }, SS_DRIFT_MS);
+    var ow = ssOverlay.offsetWidth || 200;
+    var oh = ssOverlay.offsetHeight || 150;
+    var maxX = window.innerWidth - ow - 20;
+    var maxY = window.innerHeight - oh - 20;
+    bounceX += bounceDX;
+    bounceY += bounceDY;
+    if (bounceX <= 20 || bounceX >= maxX) bounceDX = -bounceDX;
+    if (bounceY <= 20 || bounceY >= maxY) bounceDY = -bounceDY;
+    bounceX = Math.max(20, Math.min(bounceX, maxX));
+    bounceY = Math.max(20, Math.min(bounceY, maxY));
+    ssOverlay.style.left = bounceX + 'px';
+    ssOverlay.style.top = bounceY + 'px';
+  }, 1000);
 
   // Screensaver clock + debug update
   setInterval(function() {

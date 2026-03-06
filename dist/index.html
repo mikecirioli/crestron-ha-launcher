@@ -50,7 +50,7 @@
   <div class="subtitle">Configure your Home Assistant connection</div>
 
   <label for="haUrl">Home Assistant URL</label>
-  <input id="haUrl" type="text" placeholder="http://192.168.1.100:8123" value="http://192.168.1.245:8123" />
+  <input id="haUrl" type="text" placeholder="http://homeassistant.local:8123" value="http://homeassistant.local:8123" />
   <div class="hint">Include http:// and port number</div>
 
   <label for="webhookId">Webhook ID</label>
@@ -233,7 +233,7 @@ var statusEl = document.getElementById('status');
 function showWizard(prefill) {
   wizardEl.style.display = 'block';
   statusEl.style.display = 'none';
-  document.getElementById('haUrl').value = (prefill && prefill.url) || 'http://192.168.1.245:8123';
+  document.getElementById('haUrl').value = (prefill && prefill.url) || 'http://homeassistant.local:8123';
   document.getElementById('webhookId').value = (prefill && prefill.webhook) || 'crestron-open-browser';
 }
 
@@ -439,7 +439,7 @@ function runNetworkTests() {
   results.innerHTML = '<div style="color:#888">Running...</div>';
 
   var config = loadConfig();
-  var baseUrl = config ? config.url : 'http://192.168.1.245:8123';
+  var baseUrl = config ? config.url : 'http://homeassistant.local:8123';
 
   var tests = [
     { name: 'HA root', url: baseUrl + '/', mode: 'no-cors' },

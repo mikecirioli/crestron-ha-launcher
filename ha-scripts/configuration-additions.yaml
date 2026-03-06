@@ -32,6 +32,9 @@ shell_command:
   # [NEW] Photo frame image list builder
   photoframe_build_list: >-
     python3 /config/scripts/photoframe_build_list.py
+  # [NEW] Resize photos to fit TSW-1060 (1280x800), in-place
+  resize_photos: >-
+    python3 /config/scripts/resize_photos.py
 
   # ── Diagnostics ──────────────────────────────────────────────────
   # These commands query panel health via SSH. Safe to call anytime.

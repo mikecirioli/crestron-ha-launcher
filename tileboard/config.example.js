@@ -5,8 +5,8 @@ var CONFIG = {
    tileMargin: 6,
    
    // YOUR CONNECTION SETTINGS:
-   serverUrl: 'http://192.168.1.245:8123',
-   wsUrl: 'ws://192.168.1.245:8123/api/websocket',
+   serverUrl: 'http://homeassistant.local:8123',
+   wsUrl: 'ws://homeassistant.local:8123/api/websocket',
    authToken: 'YOUR_LONG_LIVED_TOKEN_HERE',
 
    pages: [

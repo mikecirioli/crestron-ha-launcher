@@ -26,7 +26,7 @@ CMD="python3 ${HA_CONFIG}/scripts/crestron_cmd.py"
 # ── Configuration ────────────────────────────────────────────────
 # Edit these to match your setup.
 TIMEZONE="014"              # 014 = Eastern Time (US & Canada). Run TIMEZONE list for codes.
-HA_URL="http://192.168.1.245:8123/crestron-display/home"
+HA_URL="http://homeassistant.local:8123/crestron-display/home"
 REBOOT_HOUR="6"           # Hour (0-23) for scheduled/memory-triggered reboots
 PROJECT_MEMORY="512"      # MB — memory limit for project (test with RAMFREE)
 MEM_LOW_TRIGGER="80"      # MB free — schedule reboot when below this

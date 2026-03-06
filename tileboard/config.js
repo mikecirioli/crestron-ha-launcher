@@ -1,7 +1,7 @@
 // 1. SETTINGS
 var MAX_IMAGES = 1443; 
 var activeCamIndex = 0;
-var HA_URL = 'http://192.168.1.245:8123';
+var HA_URL = 'http://homeassistant.local:8123';
 
 // 2. PRE-BUILD THE SLIDE DECK
 var mySlideDeck = [];
@@ -21,7 +21,7 @@ var CONFIG = {
    tileSize: 130, 
    tileMargin: 8,
    serverUrl: HA_URL,
-   wsUrl: 'ws://192.168.1.245:8123/api/websocket',
+   wsUrl: 'ws://homeassistant.local:8123/api/websocket',
    authToken: '',  // Set via deployment, not committed
 
    screensaver: {

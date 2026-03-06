@@ -218,7 +218,7 @@ npx --package=@crestron/ch5-utilities-cli ch5-cli deploy \
 
 The panel will reboot. When the CH5 app loads, it shows a setup wizard. Enter your HA URL and webhook ID, tap **Launch**, and the browser will open with your dashboard.
 
-On subsequent reboots, the app remembers your settings (stored in a cookie) and fires the webhook automatically.
+On subsequent reboots, the app remembers your settings (stored in IndexedDB) and fires the webhook automatically.
 
 ## SD Card Health
 
@@ -274,22 +274,35 @@ All versions are in `ha-scripts/` and can be used by creating an HA dashboard an
 
 A single HTML page that renders the entire dashboard and screensaver in one document — no HA card framework, no sub-iframes, no WebSocket subscription firehose. Designed for maximum stability on Chromium 95.
 
+**Dashboard layout** (1280×800, 3 rows):
+
+| Row | Content | Height |
+|-----|---------|--------|
+| 1 | Chips bar — clock, date, entity states | 54px fixed |
+| 2 | Camera snapshot (2/3 width) + weather/calendar sidebar (1/3 width) | Fills remaining space |
+| 3 | Detection strip — 7 Frigate person thumbnails | 120px fixed |
+
 **Features:**
-- Camera snapshots (syncs with `input_select.camera_selector`, 3s refresh)
-- Weather + 3-day forecast
-- Calendar events (6 calendars, color-coded, 7-day lookahead)
-- Detection strip (7 Frigate person detection thumbnails, 30s polling)
-- Chips bar (clock, date, entity states — display only)
-- Photo frame screensaver (2 min idle, single `<img>`, no blur/drift animation)
-- Side button handling (camera cycling, screensaver toggle)
-- Periodic full-page reload to combat WebView memory leaks
+
+- **Camera snapshots** — cycles through 7 cameras via `input_select.camera_selector`, 3-second refresh, preloads next image before swap to avoid flicker
+- **Weather + 3-day forecast** — current conditions with high/low temperatures, pulled from HA weather entity via REST API
+- **Calendar** — 7-day lookahead across 6 calendars, color-coded by calendar, fetched via HA REST API with signed URLs
+- **Detection strip** — 7 Frigate person detection thumbnails with relative timestamps ("2m ago"), 30-second polling (no WebSocket)
+- **Chips bar** — time, date, and entity states (thermostat, locks, etc.) as read-only display chips
+- **Photo frame screensaver** — activates after 2 minutes idle, single `<img>` tag (no crossfade), bouncing clock overlay for anti-burn-in
+- **Side button handling** — hardware buttons cycle cameras, toggle screensaver, return to dashboard
+- **Standalone WebSocket** — single persistent connection for entity state updates; reconnects automatically on disconnect
+- **Periodic full-page reload** — 15-minute timer does a full `location.href` reassignment, tearing down the entire document and reclaiming all leaked memory
+- **Debug overlay** — toggle with side button or URL param; shows JS heap, DOM count, fetch count, uptime, errors, WebSocket state
 
 **What it eliminates vs HA-native dashboards:**
+
 - HA frontend framework (Polymer/Lit, ~20MB JS heap)
-- Multiple iframes (3 separate document contexts)
-- Mushroom/layout-card/card-mod custom elements
-- `state_changed` event subscription (detection strip uses polling instead)
-- `backdrop-filter: blur()` and continuous CSS animations (GPU killers)
+- Multiple iframes (v4-v6 used 3 separate document contexts)
+- HACS custom components (mushroom, layout-card, card-mod)
+- `state_changed` event subscription firehose (uses targeted polling and REST instead)
+- `backdrop-filter: blur()` and continuous CSS animations (GPU killers on Chromium 95)
+- Decoded image bitmap accumulation (explicit null-out of `img.src` via 1×1 data URI before reassignment)
 
 **Deploy:**
 
@@ -332,12 +345,46 @@ All dashboard versions require:
 
 ### WebView Stability
 
-The TSW-1060 runs Chromium 95 on Android 5.1 with ~1.7GB RAM. Key constraints:
+The TSW-1060 runs Chromium 95 on Android 5.1 with ~1.7GB RAM and a 4-core ARM SoC. The WebView is severely resource-constrained and will crash-loop if overloaded. The following constraints were discovered through extensive soak testing (6+ hour runs with `TASKSTAT` monitoring).
 
-- **No live video** — MJPEG/WebRTC/jsmpeg all crash-loop the WebView within ~20 min
-- **No expensive CSS** — `backdrop-filter: blur()` and continuous CSS animations consume GPU
-- **Memory leaks** — Chromium 95 leaks decoded image bitmaps and JS heap over time
-- **Periodic reload** — all dashboards use `?reload=N` (seconds) to trigger a full page teardown, reclaiming all leaked memory. Camera and photoframe iframes fire `window.parent.location.reload()` on a timer.
+**Hard constraints:**
+
+- **No live video** — MJPEG, WebRTC, jsmpeg, and go2rtc all crash-loop the WebView within ~20 minutes. JavaScript video decode saturates the CPU. Only JPEG snapshot polling is viable.
+- **No expensive CSS** — `backdrop-filter: blur()` and continuous CSS transform animations (`@keyframes drift`) consume GPU resources that Chromium 95 on Android 5.1 can't spare.
+- **No HA frontend framework** — Polymer/Lit loads ~20MB of JS heap at startup. Combined with custom cards (mushroom, layout-card), this pushes the WebView past its limits within hours.
+- **Memory leaks are unavoidable** — Chromium 95 leaks decoded image bitmaps even when `img.src` is reassigned. Setting `img.src` to `''` does NOT free the bitmap — you must use a 1×1 data URI. Even with this mitigation, heap grows over hours and requires periodic full-page teardown.
+
+**What didn't work (and why):**
+
+| Approach | Failure Mode | Time to Crash |
+|----------|-------------|---------------|
+| **MJPEG streams** (`camera_view: live`) | CPU saturation from JS MJPEG decode; `generalweb` process hits 50+ min CPU time | ~20 min |
+| **go2rtc / WebRTC card** | Connection failures — DNS resolution and auth issues in WebView context | Immediate |
+| **advanced-camera-card** (Frigate integration) | Even in snapshot mode, the card's JS overhead caused crash-loops | ~4–6 hours |
+| **Multiple iframes** (v4-v6 layout) | 3 separate document contexts (camera, calendar, detections) multiplied memory pressure | ~6–12 hours |
+| **Photoframe with crossfade** | Two `<img>` tags simultaneously loaded + `backdrop-filter: blur(8px)` + CSS drift animation | ~2–4 hours on screensaver |
+| **HA native dashboard** (Lovelace cards) | Polymer/Lit framework + mushroom + card-mod + state subscriptions | ~8–12 hours |
+| **C3DEBUG at max verbosity** | All 32 debug masks ON (`C3DLEVEL 0xFFFFFFFF`) flooded syslog, contributed to instability | Compounded other issues |
+
+**What fixed it:**
+
+| Fix | Impact |
+|-----|--------|
+| `DEDICATEDVIDEOSUPPORT DISABLE` | Kills `txrxservice` (AV transport) — saved a full CPU core even with nothing connected (was burning 177 min CPU time) |
+| `CAMERASTREAMENABLE OFF` | Kills onboard camera driver + `mediaserver` — saved ~70 min CPU/hour |
+| `C3DLEVEL 0` at boot | Disables Core 3 debug logging — eliminated syslog flood |
+| Panel Lite (single HTML, no framework) | Replaced HA frontend with vanilla JS — JS heap starts at ~10MB vs ~20MB |
+| Single `<img>` screensaver | Replaced dual-image crossfade with single swap — no simultaneous decoded bitmaps |
+| 15-minute full page reload | `location.href = url` tears down entire document, reclaiming all leaked memory |
+| Snapshot polling (not subscriptions) | REST API calls on timers instead of WebSocket `state_changed` firehose |
+
+**Healthy baseline** (after all fixes):
+
+```
+CPULOAD: ~30% busy, load ~1.0
+RAMFREE: ~800 MB free
+TASKSTAT: chromium.chrome at 0:03, no CrashpadMain process
+```
 
 ## Side Buttons
 
