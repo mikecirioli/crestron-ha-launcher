@@ -75,7 +75,11 @@ The result: auto-launching HA dashboard, ~46K writes/hour (2.5% of the danger th
 
 ### Step 1: Deploy the SSH Script to Home Assistant
 
-This Python script uses `paramiko` (bundled with HA) to send console commands to the panel. No extra packages needed — survives container updates.
+This Python script uses `paramiko` to send console commands to the panel via SSH. Install it if your HA environment doesn't already have it:
+
+```bash
+pip install paramiko
+```
 
 Copy `ha-scripts/crestron_cmd.py` to your HA config directory:
 

@@ -2,7 +2,8 @@
 """
 Send a console command to a Crestron panel via SSH.
 
-Uses paramiko (bundled with Home Assistant) so no extra packages are needed.
+Uses paramiko for SSH. Install it if not already available:
+  pip install paramiko
 Survives HA container updates since it lives in the config directory.
 
 Usage:
