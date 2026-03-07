@@ -55,6 +55,13 @@ try:
     sftp.get(REMOTE_BMP, tmp_bmp)
     sftp.close()
 
+    # Clean up remote BMP to avoid filling panel disk
+    stdin2, stdout2, stderr2 = client.exec_command("DELETE /logs/ScreenShot.bmp", timeout=10)
+    stdout2.read()
+    stdin2.close()
+    stdout2.close()
+    stderr2.close()
+
     # Convert BMP to JPG
     with Image.open(tmp_bmp) as img:
         img.save(output, "JPEG", quality=90)

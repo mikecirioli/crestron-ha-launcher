@@ -274,6 +274,9 @@ All versions are in `ha-scripts/` and can be used by creating an HA dashboard an
 
 A single HTML page that renders the entire dashboard and screensaver in one document — no HA card framework, no sub-iframes, no WebSocket subscription firehose. Designed for maximum stability on Chromium 95.
 
+![Panel Lite Dashboard](docs/images/panel-lite-dashboard.jpg)
+![Panel Lite Screensaver](docs/images/panel-lite-screensaver.jpg)
+
 **Dashboard layout** (1280×800, 3 rows):
 
 | Row | Content | Height |
@@ -292,7 +295,8 @@ A single HTML page that renders the entire dashboard and screensaver in one docu
 - **Photo frame screensaver** — activates after 2 minutes idle, single `<img>` tag (no crossfade), bouncing clock overlay for anti-burn-in
 - **Side button handling** — hardware buttons cycle cameras, toggle screensaver, return to dashboard
 - **Standalone WebSocket** — single persistent connection for entity state updates; reconnects automatically on disconnect
-- **Periodic full-page reload** — 15-minute timer does a full `location.href` reassignment, tearing down the entire document and reclaiming all leaked memory
+- **Photo frame screensaver** — fetches random photos from the [photoframe-server](photoframe-server/) via `/random` endpoint. No file lists or naming conventions — just drop images in a folder
+- **Periodic full-page reload** — opt-in via `?reload=900` URL param; does a full `location.href` reassignment, tearing down the entire document and reclaiming all leaked memory. Not needed in current soak tests
 - **Debug overlay** — toggle with side button or URL param; shows JS heap, DOM count, fetch count, uptime, errors, WebSocket state
 
 **What it eliminates vs HA-native dashboards:**
@@ -307,12 +311,21 @@ A single HTML page that renders the entire dashboard and screensaver in one docu
 **Deploy:**
 
 ```bash
-# Copy files to HA
+# Copy panel-lite to HA
 cp ha-scripts/panel-lite.html <ha-config-path>/www/panel-lite.html
-cp ha-scripts/photoframe_build_list.py <ha-config-path>/scripts/photoframe_build_list.py
+
+# Deploy the photoframe server (see photoframe-server/README.md)
+cd photoframe-server && docker compose up -d
 ```
 
-Create a new dashboard in HA: **Settings > Dashboards > Add Dashboard**. Set the URL to `crestron-lite`. Paste `dash-lite.yaml` into the raw editor.
+Edit the deployed `panel-lite.html` to set `HA_TOKEN` and `PHOTOFRAME_URL` for your environment (these are not committed to the repo).
+
+Open the panel at: `http://<HA_IP>:8123/local/panel-lite.html`
+
+Or set it as the browser home page on a Crestron panel:
+```
+BROWSERHOMEPAGE http://<HA_IP>:8123/local/panel-lite.html
+```
 
 ### HA-Native Dashboards (v5/v6)
 

@@ -415,7 +415,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
 
   var WEATHER_ENTITY    = 'weather.forecast_home';
   var CAMERA_SELECTOR   = 'input_select.camera_selector';
-  var IMAGE_LIST_URL    = '/local/photoframe-images.json';
+  var PHOTOFRAME_URL    = '';  // photoframe-server base URL (e.g. http://192.168.1.245:8099) — set via ?photos= param
 
   var CAM_REFRESH_MS    = 3000;   // camera snapshot refresh
   var CAM_SYNC_MS       = 1500;   // sync camera selector
@@ -423,7 +423,6 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   var WEATHER_MS        = 300000; // weather refresh (5 min)
   var DETECT_SLOTS      = 7;      // max detection thumbnails in strip
   var PHOTO_MS          = 30000;  // screensaver photo interval (30s)
-  var PHOTO_LIST_MS     = 3600000;// photo list refresh (1 hr)
   var IDLE_TIMEOUT      = 120000; // 2 min → screensaver
   var SS_DRIFT_MS       = 120000; // reposition overlay (2 min)
   var FORECAST_DAYS     = 3;
@@ -443,6 +442,8 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   var urlHaUrl = getParam('ha_url');
   if (urlToken) HA_TOKEN = urlToken;
   if (urlHaUrl) HA_URL = urlHaUrl.replace(/\/+$/, '');  // strip trailing slash
+  var urlPhotos = getParam('photos');
+  if (urlPhotos) PHOTOFRAME_URL = urlPhotos.replace(/\/+$/, '');
 
   // Opt-in periodic reload for memory management
   var reloadParam = getParam('reload');
@@ -484,8 +485,6 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   var isScreensaver = false;
 
   // Screensaver photo state
-  var ssImages = [];
-  var ssIndex = -1;
   var ssLoadTimer = null;
   var ssSlideTimer = null;
 
@@ -690,12 +689,6 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
-  function shuffle(arr) {
-    for (var i = arr.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
-    }
-  }
 
   // ══════════════════════════════════════════════════════════
   // VIEW SWITCHING
@@ -1146,29 +1139,8 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   // SCREENSAVER: PHOTO SLIDESHOW
   // ══════════════════════════════════════════════════════════
 
-  function loadPhotoList() {
-    fetch(HA_URL + IMAGE_LIST_URL + '?_=' + Date.now())
-      .then(function(r) { return r.json(); })
-      .then(function(list) {
-        if (list && list.length > 0) {
-          // Make relative paths absolute
-          ssImages = list.map(function(url) {
-            return (url.charAt(0) === '/') ? HA_URL + url : url;
-          });
-          if (ssIndex === -1 && isScreensaver) {
-            shuffle(ssImages);
-            showNextPhoto();
-            ssSlideTimer = setInterval(showNextPhoto, PHOTO_MS);
-          }
-        }
-      })
-      .catch(function() {});
-  }
-
   function showNextPhoto() {
-    if (ssImages.length === 0) return;
-    ssIndex = (ssIndex + 1) % ssImages.length;
-    if (ssIndex === 0 && ssImages.length > 1) shuffle(ssImages);
+    if (!PHOTOFRAME_URL) return;
 
     // Fade out
     ssPhoto.classList.remove('visible');
@@ -1185,24 +1157,25 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
       };
       ssPhoto.onerror = function() {
         clearTimeout(ssLoadTimer);
-        if (ssImages.length > 1) showNextPhoto();
+        // Retry after a delay
+        ssLoadTimer = setTimeout(showNextPhoto, 5000);
       };
       ssLoadTimer = setTimeout(function() {
         ssPhoto.onload = null;
         ssPhoto.onerror = null;
         ssPhoto.src = BLANK;
-        if (ssImages.length > 1) showNextPhoto();
+        // Retry after timeout
+        ssLoadTimer = setTimeout(showNextPhoto, 5000);
       }, 8000);
 
-      ssPhoto.src = ssImages[ssIndex];
+      ssPhoto.src = PHOTOFRAME_URL + '/random?w=1280&h=800&t=' + Date.now();
     }, 1600);
   }
 
   function startScreensaver() {
-    ssIndex = -1;
-    loadPhotoList();
+    showNextPhoto();
     if (ssSlideTimer) clearInterval(ssSlideTimer);
-    // loadPhotoList will start the slide timer on first load
+    ssSlideTimer = setInterval(showNextPhoto, PHOTO_MS);
     renderSSClock();
     renderSSWeather();
     renderSSDebug();
@@ -1215,7 +1188,6 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     ssPhoto.onerror = null;
     ssPhoto.src = BLANK;
     ssPhoto.classList.remove('visible');
-    ssIndex = -1;
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1369,9 +1341,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     }, 15000);
     showDashboard();
 
-    // Pre-load photo list so screensaver can start instantly
-    loadPhotoList();
-    setInterval(loadPhotoList, PHOTO_LIST_MS);
+    // Screensaver photos served by photoframe-server (no pre-loading needed)
   }
 
   // Catch all unhandled errors visibly

@@ -1,0 +1,18 @@
+services:
+  photoframe:
+    build: .
+    container_name: photoframe-server
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    volumes:
+      - /path/to/your/photos:/media:ro
+    environment:
+      - REFRESH=30        # seconds between photos on the HTML page
+      - TITLE=            # optional overlay text
+    # For Crestron EMS mode, point the panel at:
+    #   http://<host-ip>:8099/
+    #
+    # For panel-lite screensaver, use the /random endpoint:
+    #   http://<host-ip>:8099/random
+    #   http://<host-ip>:8099/random?w=1280&h=800  (resized on the fly)

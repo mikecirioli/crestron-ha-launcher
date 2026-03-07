@@ -28,6 +28,9 @@ echo "Downloading BMP..."
 TMP_BMP=$(mktemp /tmp/crestron-XXXXXX.bmp)
 sshpass -p "${PASS}" scp ${SSH_OPTS} "${USER}@${HOST}:${REMOTE_BMP}" "${TMP_BMP}"
 
+echo "Cleaning up remote BMP..."
+sshpass -p "${PASS}" ssh ${SSH_OPTS} "${USER}@${HOST}" "DELETE /logs/ScreenShot.bmp"
+
 echo "Converting to JPG..."
 if command -v convert &>/dev/null; then
   convert "${TMP_BMP}" -quality 90 "${OUTPUT}"
