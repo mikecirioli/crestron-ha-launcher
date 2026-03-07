@@ -2,6 +2,30 @@
 
 Display a Home Assistant dashboard on a Crestron TSW-1060 (or similar) touch panel — without killing the SD card.
 
+![Panel Lite Dashboard](docs/images/panel-lite-dashboard.jpg)
+![Panel Lite Screensaver](docs/images/panel-lite-screensaver.jpg)
+
+## Just Want a Photo Frame?
+
+If you don't use Home Assistant and just want to turn your Crestron panel into a digital photo frame, see **[photoframe-server](photoframe-server/)**. It's a standalone Docker container — point your panel at it and you're done.
+
+```bash
+# 1. Clone and start the server
+cd photoframe-server
+# Edit docker-compose.yaml — set your photos directory
+docker compose up -d
+
+# 2. Point your panel at it
+#    EMS mode (simplest):
+#      EMS <host-ip>:8099
+#    Or UserProject mode:
+#      BROWSEROPEN http://<host-ip>:8099
+```
+
+Full-screen photos with fade transitions, bouncing clock overlay, and optional weather (if you do have HA). No Home Assistant required.
+
+---
+
 ## The Problem
 
 Crestron TSW panels can display web pages in two ways:
@@ -273,9 +297,6 @@ All versions are in `ha-scripts/` and can be used by creating an HA dashboard an
 ### Panel Lite (Recommended)
 
 A single HTML page that renders the entire dashboard and screensaver in one document — no HA card framework, no sub-iframes, no WebSocket subscription firehose. Designed for maximum stability on Chromium 95.
-
-![Panel Lite Dashboard](docs/images/panel-lite-dashboard.jpg)
-![Panel Lite Screensaver](docs/images/panel-lite-screensaver.jpg)
 
 **Dashboard layout** (1280×800, 3 rows):
 

@@ -1,28 +1,44 @@
 # Photo Frame Server
 
-A minimal HTTP server that serves random photos from a directory. Designed for digital signage and touch panel photo frames — works great with Crestron TSW panels, wall-mounted tablets, or any device with a browser.
+Turn any Crestron TSW panel, wall tablet, or old laptop into a digital photo frame. Just point a browser at this server and it displays your photos full-screen with fade transitions, a bouncing clock overlay, and optional weather.
 
-![Dashboard](../docs/images/panel-lite-dashboard.jpg)
-![Screensaver](../docs/images/panel-lite-screensaver.jpg)
+No Home Assistant required. No special software on the display device. If it has a web browser, it works.
 
-## Endpoints
+![Photo Frame](../docs/images/panel-lite-screensaver.jpg)
 
-| Endpoint | Returns | Use Case |
-|----------|---------|----------|
-| `/` | Full-screen HTML page with fade transitions and clock overlay | Point any browser or kiosk at this |
-| `/random` | A random image file with proper content-type | API endpoint for custom dashboards |
-| `/random?w=1280&h=800` | Random image resized on the fly (requires Pillow) | Bandwidth-friendly for constrained devices |
-| `/health` | `ok` | Container/load balancer health check |
+## What You Need
 
-## Quick Start
+- A computer to run the server (any Linux/Mac/Windows machine on your network — a Raspberry Pi works great)
+- Docker installed on that computer ([install guide](https://docs.docker.com/get-docker/))
+- A folder of photos (jpg, png, webp — any mix, any filenames)
+- A display device with a browser (Crestron panel, tablet, old laptop, etc.)
 
-### Docker (recommended)
+## Step-by-Step Setup
+
+### 1. Get the code
 
 ```bash
-docker compose up -d
+git clone https://github.com/mikecirioli/crestron-ha-launcher.git
+cd crestron-ha-launcher/photoframe-server
 ```
 
-Edit `docker-compose.yaml` to point at your photos directory:
+Or just download the two files you need: `server.py` and `Dockerfile`.
+
+### 2. Put your photos in a folder
+
+Any folder on the server machine. For example:
+
+```bash
+mkdir -p /home/youruser/photos
+# Copy or move your photos into this folder
+cp /path/to/your/vacation-pics/*.jpg /home/youruser/photos/
+```
+
+File names don't matter — `IMG_2024.jpg`, `beach.png`, `1.webp` are all fine. Any mix of formats. Just dump them in one folder.
+
+### 3. Edit docker-compose.yaml
+
+Open `docker-compose.yaml` in a text editor and change the photos path to match your folder:
 
 ```yaml
 services:
@@ -33,88 +49,163 @@ services:
     ports:
       - "8099:8099"
     volumes:
-      - /path/to/your/photos:/media:ro
+      - /home/youruser/photos:/media:ro    # <-- change this to YOUR photos folder
     environment:
-      - REFRESH=30
+      - REFRESH=30        # seconds between photos
+      - TITLE=            # optional text on the overlay (e.g. "Family Photos")
 ```
 
-Then open `http://<host-ip>:8099/` in a browser.
+The format is `/path/on/your/computer:/media:ro` — only change the part before the first colon.
 
-### Standalone
+### 4. Build and start the server
 
 ```bash
-pip install Pillow  # optional, needed for on-the-fly resize
-PHOTO_DIR=/path/to/photos python3 server.py
+docker compose up -d
 ```
+
+This builds the container image (takes ~30 seconds the first time) and starts the server in the background. It will automatically restart if the machine reboots.
+
+### 5. Test it
+
+Open a browser on any device on your network and go to:
+
+```
+http://<server-ip>:8099/
+```
+
+Replace `<server-ip>` with the IP address of the machine running Docker. To find it:
+
+```bash
+# On the server machine:
+hostname -I | awk '{print $1}'
+```
+
+You should see a full-screen photo with a clock overlay. The photo changes every 30 seconds with a fade transition. The clock slowly drifts around the screen to prevent burn-in.
+
+### 6. Point your display at it
+
+**Crestron TSW Panel — EMS Mode (simplest):**
+
+From the panel console (via SSH or Toolbox):
+
+```
+EMS <server-ip>:8099
+REBOOT
+```
+
+That's it. The panel boots straight into the photo frame.
+
+> **Note:** EMS mode generates heavy SD card writes (~100K writes/hour) due to browser caching. This is fine for occasional use, but for a panel running 24/7, consider UserProject mode with `BROWSERCACHE DISABLE` (see the [main project README](../README.md)).
+
+**Crestron TSW Panel — UserProject/Browser Mode:**
+
+```
+BROWSEROPEN http://<server-ip>:8099/
+```
+
+Or set it as the home page so it loads on every boot:
+
+```
+BROWSERHOMEPAGE http://<server-ip>:8099/
+```
+
+**Any other device:**
+
+Open `http://<server-ip>:8099/` in a browser. For a kiosk/full-screen experience, use the browser's full-screen mode (usually F11) or a kiosk app.
+
+## Adding or Removing Photos
+
+Just add or remove files from your photos folder. The server detects changes automatically — no restart needed.
+
+```bash
+# Add new photos
+cp new-photo.jpg /home/youruser/photos/
+
+# Remove a photo
+rm /home/youruser/photos/old-photo.jpg
+```
+
+## Endpoints
+
+| Endpoint | Returns | Use Case |
+|----------|---------|----------|
+| `/` | Full-screen HTML page with fade transitions and clock overlay | Point any browser or kiosk at this |
+| `/random` | A random image file with proper content-type | API endpoint for custom dashboards |
+| `/random?w=1280&h=800` | Random image resized on the fly | Bandwidth-friendly for constrained devices |
+| `/health` | `ok` | Container/load balancer health check |
 
 ## Configuration
 
-All configuration is via environment variables:
+All configuration is via environment variables in `docker-compose.yaml`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PHOTO_DIR` | `/media` | Directory containing images (jpg, png, webp, gif, bmp) |
+| `PHOTO_DIR` | `/media` | Directory inside the container (you shouldn't need to change this) |
 | `PORT` | `8099` | Listen port |
-| `REFRESH` | `30` | Seconds between photo changes on the HTML page |
+| `REFRESH` | `30` | Seconds between photo changes |
 | `TITLE` | _(empty)_ | Optional text shown in the clock overlay |
 
-## HTML Page URL Parameters
+## Optional: Weather Overlay (requires Home Assistant)
 
-The built-in HTML page (`/`) accepts optional URL parameters for Home Assistant integration:
+If you have Home Assistant, you can add current weather and a 3-day forecast to the clock overlay by adding URL parameters:
+
+```
+http://<server-ip>:8099/?ha_url=http://homeassistant.local:8123&token=YOUR_LONG_LIVED_TOKEN
+```
 
 | Parameter | Description |
 |-----------|-------------|
-| `ha_url` | Home Assistant base URL (e.g. `http://homeassistant.local:8123`) |
-| `token` | HA long-lived access token |
+| `ha_url` | Home Assistant base URL |
+| `token` | HA long-lived access token (create at Profile → Security → Long-Lived Access Tokens) |
 | `weather` | Weather entity ID (default: `weather.forecast_home`) |
 
-**Without HA params:** Clock and date overlay only — works standalone.
-
-**With HA params:** Adds current temperature, conditions, and 3-day forecast to the overlay.
-
-Example: `http://<host>:8099/?ha_url=http://homeassistant.local:8123&token=YOUR_TOKEN`
-
-The clock overlay slowly drifts across the screen (~1px/sec bounce) for burn-in prevention on always-on displays.
-
-## Supported Image Formats
-
-jpg, jpeg, png, webp, gif, bmp — any mix in the same directory.
-
-File names don't matter. Just drop images in the folder and they're in rotation. New images are picked up automatically when the directory changes.
-
-## Use Cases
-
-### Crestron TSW Panel — EMS Mode Photo Frame
-
-The simplest possible setup. No CH5 app, no Home Assistant, no webhooks.
-
-1. Deploy the container on any machine on your network
-2. On the panel console: `EMS <host-ip>:8099`
-3. Done — full-screen photo frame with clock overlay
-
-> **Note:** EMS mode generates heavy SD card writes (~100K/hour) due to browser caching. For long-term use, consider UserProject mode with the CH5 launcher app instead.
-
-### Crestron TSW Panel — Dashboard Screensaver
-
-If you're running the Panel Lite dashboard from the [crestron-ha-launcher](../) project, the screensaver can fetch photos from this server instead of a static JSON list:
-
-- No `photoframe_build_list.py` needed
-- No numbered files or JSON manifests
-- Drop photos in the folder, they appear automatically
-- Optional server-side resize saves bandwidth and panel memory
-
-### Wall Tablet / Kiosk
-
-Point any Android tablet, iPad, Fire tablet, or old laptop at `http://<host-ip>:8099/` in kiosk/full-screen mode. The page handles everything — photo cycling, fade transitions, clock, and auto-recovery on network errors.
+Without these parameters, the overlay shows just the clock and date — no HA connection needed.
 
 ## On-the-Fly Resize
 
-If Pillow is installed (included in the Docker image), you can request resized images:
+The `/random` endpoint supports optional resize parameters:
 
 ```
 /random?w=1280&h=800
 ```
 
-The server resizes to fit within the given dimensions (preserving aspect ratio), applies EXIF rotation, and serves the result. Original files are never modified.
+This resizes the image to fit within the given dimensions (preserving aspect ratio), applies EXIF rotation corrections, and serves the result. Original files are never modified. Useful for saving bandwidth when serving to constrained devices.
 
-Without Pillow, resize parameters are ignored and the original file is served.
+## Running Without Docker
+
+If you prefer not to use Docker:
+
+```bash
+# Install Python 3 if you don't have it
+# Install Pillow (optional — needed for on-the-fly resize)
+pip install Pillow
+
+# Start the server
+PHOTO_DIR=/path/to/your/photos python3 server.py
+```
+
+The server runs on port 8099 by default. Set the `PORT` environment variable to change it.
+
+## Stopping / Restarting
+
+```bash
+# Stop the server
+docker compose down
+
+# Restart (e.g. after changing config)
+docker compose restart
+
+# View logs
+docker compose logs -f
+
+# Rebuild after updating server.py
+docker compose up -d --build
+```
+
+## Supported Image Formats
+
+jpg, jpeg, png, webp, gif, bmp — any mix in the same directory.
+
+## Integration with Panel Lite Dashboard
+
+If you're running the [Panel Lite](../) Home Assistant dashboard, the screensaver can fetch photos from this server instead of a static JSON list. Set `PHOTOFRAME_URL` in your deployed `panel-lite.html` or pass `?photos=http://<server-ip>:8099` as a URL parameter. This eliminates the need for `photoframe_build_list.py` and numbered filenames.
