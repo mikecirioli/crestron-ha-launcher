@@ -95,7 +95,7 @@ REBOOT
 
 That's it. The panel boots straight into the photo frame.
 
-> **Note:** EMS mode generates heavy SD card writes (~100K writes/hour) due to browser caching. This is fine for occasional use, but for a panel running 24/7, consider UserProject mode with `BROWSERCACHE DISABLE` (see the [main project README](../README.md)).
+> **Note:** EMS mode enables aggressive browser caching which increases SD card writes. For a panel running 24/7, consider UserProject mode with `BROWSERCACHE DISABLE` to extend SD card life (see the [main project README](../README.md)).
 
 **Crestron TSW Panel — UserProject/Browser Mode:**
 
