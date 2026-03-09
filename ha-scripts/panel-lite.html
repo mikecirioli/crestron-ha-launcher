@@ -261,7 +261,7 @@
   }
   #screensaver.hidden { display: none; }
 
-  #ss-photo {
+  .ss-layer {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
@@ -269,7 +269,7 @@
     opacity: 0;
     transition: opacity 1.5s ease-in-out;
   }
-  #ss-photo.visible { opacity: 1; }
+  .ss-layer.visible { opacity: 1; }
 
   .ss-overlay {
     position: fixed;
@@ -296,6 +296,12 @@
     font-size: 15px;
     font-weight: 400;
     opacity: 0.9;
+    margin-top: 6px;
+  }
+  .ss-overlay .ss-nextevent {
+    font-size: 13px;
+    font-weight: 400;
+    opacity: 0.8;
     margin-top: 6px;
   }
   .ss-overlay .ss-forecast {
@@ -351,11 +357,13 @@
 
   <!-- ════ SCREENSAVER ═════════════════════════════════════ -->
   <div id="screensaver" class="hidden">
-    <img id="ss-photo" alt="">
+    <img id="ss-photo-a" class="ss-layer" alt="">
+    <img id="ss-photo-b" class="ss-layer" alt="">
     <div class="ss-overlay" id="ss-overlay">
       <div class="ss-clock" id="ss-clock"></div>
       <div class="ss-date" id="ss-date"></div>
       <div class="ss-weather" id="ss-weather"></div>
+      <div class="ss-nextevent" id="ss-nextevent"></div>
       <div class="ss-forecast" id="ss-forecast"></div>
       <div class="ss-debug" id="ss-debug"></div>
     </div>
@@ -504,7 +512,9 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   var camImgB = document.getElementById('cam-img-b');
   var camFront = 'a';  // which layer is currently visible
   var camLabel = document.getElementById('cam-label');
-  var ssPhoto = document.getElementById('ss-photo');
+  var ssPhotoA = document.getElementById('ss-photo-a');
+  var ssPhotoB = document.getElementById('ss-photo-b');
+  var ssFront = 'a';
   var ssOverlay = document.getElementById('ss-overlay');
 
   // ══════════════════════════════════════════════════════════
@@ -883,6 +893,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   // ══════════════════════════════════════════════════════════
 
   var forecastData = null;
+  var calendarEvents = [];
 
   function renderWeather() {
     var entity = states[WEATHER_ENTITY];
@@ -962,6 +973,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
       return (a.start.dateTime || a.start.date || '')
         .localeCompare(b.start.dateTime || b.start.date || '');
     });
+    calendarEvents = events;
 
     var html = '';
     var lastDay = '';
@@ -1146,35 +1158,35 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
 
   function showNextPhoto() {
     if (!PHOTOFRAME_URL) return;
-
-    // Fade out
-    ssPhoto.classList.remove('visible');
     clearTimeout(ssLoadTimer);
 
-    setTimeout(function() {
-      ssPhoto.onload = null;
-      ssPhoto.onerror = null;
-      ssPhoto.src = BLANK;
+    var back = (ssFront === 'a') ? ssPhotoB : ssPhotoA;
+    var front = (ssFront === 'a') ? ssPhotoA : ssPhotoB;
 
-      ssPhoto.onload = function() {
-        clearTimeout(ssLoadTimer);
-        ssPhoto.classList.add('visible');
-      };
-      ssPhoto.onerror = function() {
-        clearTimeout(ssLoadTimer);
-        // Retry after a delay
-        ssLoadTimer = setTimeout(showNextPhoto, 5000);
-      };
-      ssLoadTimer = setTimeout(function() {
-        ssPhoto.onload = null;
-        ssPhoto.onerror = null;
-        ssPhoto.src = BLANK;
-        // Retry after timeout
-        ssLoadTimer = setTimeout(showNextPhoto, 5000);
-      }, 8000);
+    back.onload = function() {
+      clearTimeout(ssLoadTimer);
+      back.classList.add('visible');
+      // After crossfade completes, release old image
+      setTimeout(function() {
+        front.classList.remove('visible');
+        front.onload = null;
+        front.onerror = null;
+        front.src = BLANK;
+      }, 1600);
+      ssFront = (ssFront === 'a') ? 'b' : 'a';
+    };
+    back.onerror = function() {
+      clearTimeout(ssLoadTimer);
+      ssLoadTimer = setTimeout(showNextPhoto, 5000);
+    };
+    ssLoadTimer = setTimeout(function() {
+      back.onload = null;
+      back.onerror = null;
+      back.src = BLANK;
+      ssLoadTimer = setTimeout(showNextPhoto, 5000);
+    }, 8000);
 
-      ssPhoto.src = PHOTOFRAME_URL + '/random?w=1280&h=800&t=' + Date.now();
-    }, 1600);
+    back.src = PHOTOFRAME_URL + '/random?w=1280&h=800&t=' + Date.now();
   }
 
   function startScreensaver() {
@@ -1183,16 +1195,19 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     ssSlideTimer = setInterval(showNextPhoto, PHOTO_MS);
     renderSSClock();
     renderSSWeather();
+    renderSSNextEvent();
     renderSSDebug();
   }
 
   function stopScreensaver() {
     if (ssSlideTimer) { clearInterval(ssSlideTimer); ssSlideTimer = null; }
     clearTimeout(ssLoadTimer);
-    ssPhoto.onload = null;
-    ssPhoto.onerror = null;
-    ssPhoto.src = BLANK;
-    ssPhoto.classList.remove('visible');
+    ssPhotoA.onload = null; ssPhotoA.onerror = null;
+    ssPhotoB.onload = null; ssPhotoB.onerror = null;
+    ssPhotoA.src = BLANK; ssPhotoB.src = BLANK;
+    ssPhotoA.classList.remove('visible');
+    ssPhotoB.classList.remove('visible');
+    ssFront = 'a';
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1235,6 +1250,45 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
         html += '</div>';
       }
       el.innerHTML = html;
+    }
+  }
+
+  function renderSSNextEvent() {
+    var el = document.getElementById('ss-nextevent');
+    if (!calendarEvents.length) { el.textContent = ''; return; }
+
+    var now = new Date();
+    var next = null;
+    for (var i = 0; i < calendarEvents.length; i++) {
+      var ev = calendarEvents[i];
+      var s = ev.start.dateTime || ev.start.date;
+      var e = ev.end ? (ev.end.dateTime || ev.end.date) : s;
+      if (new Date(e) > now) { next = ev; break; }
+    }
+    if (!next) { el.textContent = ''; return; }
+
+    var title = next.summary || next.title || '(No title)';
+    var startStr = next.start.dateTime || next.start.date;
+    var startDt = new Date(startStr);
+    var diffMs = startDt - now;
+
+    var prefix;
+    if (diffMs <= 0) {
+      prefix = 'Now';
+    } else if (diffMs < 3600000) {
+      prefix = 'In ' + Math.ceil(diffMs / 60000) + 'min';
+    } else if (diffMs < 86400000) {
+      var hrs = Math.floor(diffMs / 3600000);
+      var mins = Math.ceil((diffMs % 3600000) / 60000);
+      prefix = 'In ' + hrs + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
+    } else {
+      prefix = shortDay(startStr.split('T')[0]);
+    }
+
+    if (!next.start.dateTime) {
+      el.textContent = '\uD83D\uDCC5  ' + title;
+    } else {
+      el.textContent = '\uD83D\uDCC5  ' + prefix + ' \u00B7 ' + title;
     }
   }
 
@@ -1332,6 +1386,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     if (isScreensaver) {
       renderSSClock();
       renderSSWeather();
+      renderSSNextEvent();
       renderSSDebug();
     }
   }, 30000);
