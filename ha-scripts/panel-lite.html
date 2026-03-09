@@ -330,7 +330,7 @@
 <body>
 
   <!-- ════ DEBUG STATUS (visible until dashboard renders) ══ -->
-  <div id="dbg" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#000;color:#0f0;font:12px monospace;padding:8px;white-space:pre-wrap;max-height:50%;overflow-y:auto"></div>
+  <div id="dbg" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#000;color:#0f0;font:12px monospace;padding:8px;white-space:pre-wrap;max-height:50%;overflow-y:auto;display:none"></div>
 
   <!-- ════ DASHBOARD ═══════════════════════════════════════ -->
   <div id="dashboard">
@@ -363,6 +363,10 @@
 
 <script>
 // Early diagnostic — runs even if main script has parse errors
+// Only visible with ?debug=1
+if (location.search.indexOf('debug=1') !== -1) {
+  document.getElementById('dbg').style.display = '';
+}
 document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + navigator.userAgent;
 </script>
 <script>
@@ -444,6 +448,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   if (urlHaUrl) HA_URL = urlHaUrl.replace(/\/+$/, '');  // strip trailing slash
   var urlPhotos = getParam('photos');
   if (urlPhotos) PHOTOFRAME_URL = urlPhotos.replace(/\/+$/, '');
+  var DEBUG_MODE = getParam('debug') === '1';
 
   // Opt-in periodic reload for memory management
   var reloadParam = getParam('reload');
@@ -464,7 +469,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     var ts = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
     dbgLines.push('[' + ts + '] ' + msg);
     if (dbgLines.length > 30) dbgLines.shift();
-    if (dbgEl) dbgEl.textContent = dbgLines.join('\n');
+    if (dbgEl && DEBUG_MODE) dbgEl.textContent = dbgLines.join('\n');
   }
   dbg('page loaded');
   dbg('UA: ' + navigator.userAgent);
@@ -1296,8 +1301,10 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
     // Line 3: last error (if any)
     if (lastError) lines.push(lastError);
 
-    document.getElementById('ss-debug').textContent = lines.join('\n');
-    document.getElementById('ss-debug').style.whiteSpace = 'pre';
+    if (DEBUG_MODE) {
+      document.getElementById('ss-debug').textContent = lines.join('\n');
+      document.getElementById('ss-debug').style.whiteSpace = 'pre';
+    }
   }
 
   // Anti-burn-in: slow bounce (1 update/sec, ~1px/sec drift)
@@ -1335,10 +1342,12 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
 
   function init() {
     dbg('init() — showing dashboard');
-    // Hide debug overlay after successful init (tap to show again)
-    setTimeout(function() {
-      if (dbgEl) dbgEl.style.display = 'none';
-    }, 15000);
+    // In debug mode, auto-hide startup overlay after 15s
+    if (DEBUG_MODE) {
+      setTimeout(function() {
+        if (dbgEl) dbgEl.style.display = 'none';
+      }, 15000);
+    }
     showDashboard();
 
     // Screensaver photos served by photoframe-server (no pre-loading needed)
