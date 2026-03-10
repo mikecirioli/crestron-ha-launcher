@@ -318,11 +318,12 @@ A single HTML page that renders the entire dashboard and screensaver in one docu
 - **Detection strip** — 7 Frigate person detection thumbnails with relative timestamps ("2m ago"), 30-second polling (no WebSocket)
 - **Chips bar** — time, date, and entity states (thermostat, locks, etc.) as read-only display chips
 - **Photo frame screensaver** — activates after 2 minutes idle, single `<img>` tag (no crossfade), bouncing clock overlay for anti-burn-in
-- **Side button handling** — hardware buttons cycle cameras, toggle screensaver, return to dashboard
+- **Side button handling** — hardware buttons cycle cameras, toggle screensaver, standby panel, return to dashboard (uses `e.code` — see button map above)
 - **Standalone WebSocket** — single persistent connection for entity state updates; reconnects automatically on disconnect
 - **Photo frame screensaver** — fetches random photos from the [photoframe-server](photoframe-server/) via `/random` endpoint. No file lists or naming conventions — just drop images in a folder
+- **External config file** — secrets (HA_TOKEN), URLs, entity lists, and timing in a separate `panel-lite-config.js` that survives HTML updates
 - **Periodic full-page reload** — opt-in via `?reload=900` URL param; does a full `location.href` reassignment, tearing down the entire document and reclaiming all leaked memory. Not needed in current soak tests
-- **Debug overlay** — toggle with side button or URL param; shows JS heap, DOM count, fetch count, uptime, errors, WebSocket state
+- **Debug overlay** — append `#debug` to URL (Crestron-safe; `?debug=1` also works from regular browsers)
 
 **What it eliminates vs HA-native dashboards:**
 
@@ -333,23 +334,53 @@ A single HTML page that renders the entire dashboard and screensaver in one docu
 - `backdrop-filter: blur()` and continuous CSS animations (GPU killers on Chromium 95)
 - Decoded image bitmap accumulation (explicit null-out of `img.src` via 1×1 data URI before reassignment)
 
+**Side button mapping (Panel Lite):**
+
+| Button | Icon | `e.code` | Action |
+|--------|------|----------|--------|
+| 1 (top) | Power | `BrowserBack` | Standby (`shell_command.crestron_standby`) |
+| 2 | Home | `Home` | Return to dashboard |
+| 3 | Up arrow | `AudioVolumeUp` | Next camera |
+| 4 | Lightbulb | `AudioVolumeMute` | Toggle screensaver |
+| 5 (bottom) | Down arrow | `AudioVolumeDown` | Previous camera |
+
+> **Note:** TSW-1060 hardware buttons set `e.code` but `e.key` is null. The button handler checks `e.code` first, falling back to `e.key` for regular browsers.
+
 **Deploy:**
 
 ```bash
-# Copy panel-lite to HA
+# 1. Copy panel-lite to HA
 cp ha-scripts/panel-lite.html <ha-config-path>/www/panel-lite.html
 
-# Deploy the photoframe server (see photoframe-server/README.md)
+# 2. Create the config file from the example
+cp ha-scripts/panel-lite-config.js.example <ha-config-path>/www/panel-lite-config.js
+# Edit panel-lite-config.js — set HA_TOKEN (long-lived access token)
+# Optionally set HA_URL, PHOTOFRAME_URL, entity lists, and timing
+
+# 3. Deploy the photoframe server (see photoframe-server/README.md)
 cd photoframe-server && docker compose up -d
 ```
 
-Edit the deployed `panel-lite.html` to set `HA_TOKEN` and `PHOTOFRAME_URL` for your environment (these are not committed to the repo).
+Configuration is split into two files:
+
+| File | Purpose | Redeploy frequency |
+|------|---------|-------------------|
+| `panel-lite-config.js` | Secrets (HA_TOKEN), URLs, entity lists, timing | Once (edit on server) |
+| `panel-lite.html` | All dashboard/screensaver logic | As often as needed |
+
+This separation means you can update `panel-lite.html` freely without losing your token or config. The config file is gitignored (contains secrets); use `panel-lite-config.js.example` as a template.
 
 Open the panel at: `http://<HA_IP>:8123/local/panel-lite.html`
 
 Or set it as the browser home page on a Crestron panel:
 ```
 BROWSERHOMEPAGE http://<HA_IP>:8123/local/panel-lite.html
+```
+
+**Debug mode:** Append `#debug` to the URL to show the debug overlay. This uses a URL hash instead of query params because Crestron's `BROWSEROPEN` command mangles `=` and `&` characters.
+
+```
+BROWSEROPEN http://<HA_IP>:8123/local/panel-lite.html#debug
 ```
 
 ### HA-Native Dashboards (v5/v6)
@@ -436,28 +467,30 @@ Copy the key test page to your HA `www/` folder:
 cp utils/keytest.html <ha-config-path>/www/keytest.html
 ```
 
-Open `http://<HA_IP>:8123/local/keytest.html` on the panel and press each button. TSW-1060 key names:
+Open `http://<HA_IP>:8123/local/keytest.html` on the panel and press each button. TSW-1060 key codes:
 
-| Position | Icon | Key Name |
-|----------|------|----------|
-| 1 (top) | Power | `BrowserBack` |
-| 2 | Home | `Home` |
-| 3 | Up arrow | `AudioVolumeUp` |
-| 4 | Lightbulb | `AudioVolumeMute` |
-| 5 (bottom) | Down arrow | `AudioVolumeDown` |
+| Position | Icon | `e.code` | `e.key` |
+|----------|------|----------|---------|
+| 1 (top) | Power | `BrowserBack` | `Unidentified` |
+| 2 | Home | `Home` | `Unidentified` |
+| 3 | Up arrow | `AudioVolumeUp` | `Unidentified` |
+| 4 | Lightbulb | `AudioVolumeMute` | `Unidentified` |
+| 5 (bottom) | Down arrow | `AudioVolumeDown` | `Unidentified` |
+
+> **Important:** On the TSW-1060, hardware buttons set `e.code` but `e.key` is always `Unidentified` (null in some contexts). Always use `e.code` for button mapping, not `e.key`.
 
 ### Panel Controller (crestron-panel.js)
 
 The panel controller handles side buttons, idle detection, camera cycling, and WebView memory management in one script. It activates on `crestron-display` and `crestron-v6` dashboards (guard clause) — inert on all other devices. **Not needed for Panel Lite** (which handles everything internally).
 
-Default button mapping:
+Default button mapping (uses `e.code`):
 
-| Button | Action |
-|--------|--------|
-| Power / Home | Return to dashboard |
-| Up arrow | Next camera (via `input_select.select_next`) |
-| Down arrow | Previous camera (via `input_select.select_previous`) |
-| Lightbulb | Toggle photo frame |
+| Button | `e.code` | Action |
+|--------|----------|--------|
+| Power / Home | `BrowserBack` / `Home` | Return to dashboard |
+| Up arrow | `AudioVolumeUp` | Next camera (via `input_select.select_next`) |
+| Down arrow | `AudioVolumeDown` | Previous camera (via `input_select.select_previous`) |
+| Lightbulb | `AudioVolumeMute` | Toggle photo frame |
 
 Deploy: copy to `www/crestron-panel.js` and add to `configuration.yaml` under `frontend > extra_js_url_es5`.
 
@@ -489,6 +522,9 @@ These can be run anytime via `crestron_cmd.py` to check panel health:
 | `TASKSTAT` | Show per-process CPU time (useful for finding runaway services) |
 
 ## Troubleshooting
+
+**URL params don't work from BROWSEROPEN**
+- Crestron's `BROWSEROPEN` console command mangles `=` to `-` and `&` to `\&`. URL query params (`?key=value`) will not work. Use `#hash` fragments or external config files instead.
 
 **Panel shows CH5 setup wizard but browser never opens**
 - Test the webhook manually: `curl -X POST http://<HA_IP>:8123/api/webhook/crestron-open-browser`

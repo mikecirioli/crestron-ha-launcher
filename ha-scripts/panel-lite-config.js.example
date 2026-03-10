@@ -1,0 +1,68 @@
+// panel-lite-config.js — deploy once, update panel-lite.html freely
+// This file is loaded before the main app and sets window.PANEL_CONFIG.
+// Only edit the values below — the main HTML reads from this object.
+
+window.PANEL_CONFIG = {
+
+  // ── Secrets / Environment ──────────────────────────────────
+  HA_URL:   '',  // leave empty to auto-detect from page origin
+  HA_TOKEN: 'YOUR_LONG_LIVED_TOKEN_HERE',
+  PHOTOFRAME_URL: 'http://192.168.1.245:8099',
+
+  // ── Cameras ────────────────────────────────────────────────
+  CAMERAS: [
+    { entity: 'camera.frontporch', name: 'Front Porch' },
+    { entity: 'camera.driveway',   name: 'Driveway' },
+    { entity: 'camera.backyard',   name: 'Back Yard' },
+    { entity: 'camera.critter',    name: 'Critter' },
+    { entity: 'camera.armory',     name: 'Armory' },
+    { entity: 'camera.pancam',     name: 'Pan Cam' },
+    { entity: 'camera.gatetown',   name: 'Gatetown' }
+  ],
+
+  // ── Frigate Detection Entities ─────────────────────────────
+  DETECTIONS: [
+    { entity: 'image.frontporch_person', name: 'Front Porch' },
+    { entity: 'image.driveway_person',   name: 'Driveway' },
+    { entity: 'image.backyard_person',   name: 'Backyard' },
+    { entity: 'image.critter_person',    name: 'Critter' },
+    { entity: 'image.armory_person',     name: 'Armory' },
+    { entity: 'image.pancam_person',     name: 'Pan Cam' },
+    { entity: 'image.gatetown_person',   name: 'Gatetown' }
+  ],
+
+  // ── Calendars ──────────────────────────────────────────────
+  CALENDARS: [
+    { entity: 'calendar.home',                       color: '#4285f4' },
+    { entity: 'calendar.mikecirioli_gmail_com',      color: '#ea4335' },
+    { entity: 'calendar.birthdays',                  color: '#fbbc04' },
+    { entity: 'calendar.wcpss_24_25_trad_calendar',  color: '#34a853' },
+    { entity: 'calendar.mcirioli_cloudbees_com',     color: '#ff6d01' },
+    { entity: 'calendar.jenkins',                    color: '#46bdc6' }
+  ],
+
+  // ── Device Control Chips ───────────────────────────────────
+  CHIPS: [
+    { entity: 'vacuum.sweeping_robot',            icon: '\uD83E\uDDF9', name: 'Roesy' },
+    { entity: 'light.ceiling_light_rgbcw_8f2721', icon: '\uD83D\uDCA1', name: 'Sink' },
+    { entity: 'switch.smart_plug_3',              icon: '\uD83C\uDF32', name: 'Tree' },
+    { entity: 'switch.smart_plug',                icon: '\u26F2',       name: 'Fountain' },
+    { entity: 'switch.smart_plug_2',              icon: '\uD83D\uDC1F', name: 'Pond' }
+  ],
+
+  // ── Other Entities ─────────────────────────────────────────
+  WEATHER_ENTITY:  'weather.forecast_home',
+  CAMERA_SELECTOR: 'input_select.camera_selector',
+
+  // ── Timing (ms) ────────────────────────────────────────────
+  CAM_REFRESH_MS:  3000,
+  CAM_SYNC_MS:     1500,
+  CALENDAR_MS:     300000,
+  WEATHER_MS:      300000,
+  DETECT_SLOTS:    7,
+  PHOTO_MS:        30000,
+  IDLE_TIMEOUT:    120000,
+  SS_DRIFT_MS:     120000,
+  FORECAST_DAYS:   3,
+  WS_RECONNECT_MS: 5000
+};

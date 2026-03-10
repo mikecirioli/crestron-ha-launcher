@@ -369,83 +369,56 @@
     </div>
   </div>
 
+<script src="panel-lite-config.js"></script>
 <script>
 // Early diagnostic — runs even if main script has parse errors
-// Only visible with ?debug=1
-if (location.search.indexOf('debug=1') !== -1) {
+// Visible with ?debug=1 or #debug (hash works around Crestron BROWSEROPEN mangling = and &)
+if (location.search.indexOf('debug=1') !== -1 || location.hash.indexOf('debug') !== -1) {
   document.getElementById('dbg').style.display = '';
 }
 document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + navigator.userAgent;
 </script>
 <script>
+window.onerror = function(msg, src, line, col, err) {
+  var d = document.getElementById('dbg');
+  if (d) { d.style.display = ''; d.textContent += '\nERROR: ' + msg + ' @ line ' + line + ':' + col; }
+};
 (function() {
   'use strict';
 
   // ══════════════════════════════════════════════════════════
-  // CONFIGURATION
+  // CONFIGURATION — loaded from panel-lite-config.js
+  // Edit that file for secrets, entities, and tuning.
   // ══════════════════════════════════════════════════════════
 
-  var HA_URL   = '';  // HA base URL (auto-detected from page origin if empty; override via ?ha_url=)
-  var HA_TOKEN = '';  // Long-lived access token — set via ?token= param or edit here
+  var C = window.PANEL_CONFIG || {};
 
-  var CAMERAS = [
-    { entity: 'camera.frontporch', name: 'Front Porch' },
-    { entity: 'camera.driveway',   name: 'Driveway' },
-    { entity: 'camera.backyard',   name: 'Back Yard' },
-    { entity: 'camera.critter',    name: 'Critter' },
-    { entity: 'camera.armory',     name: 'Armory' },
-    { entity: 'camera.pancam',     name: 'Pan Cam' },
-    { entity: 'camera.gatetown',   name: 'Gatetown' }
-  ];
-
-  var DETECTIONS = [
-    { entity: 'image.frontporch_person', name: 'Front Porch' },
-    { entity: 'image.driveway_person',   name: 'Driveway' },
-    { entity: 'image.backyard_person',   name: 'Backyard' },
-    { entity: 'image.critter_person',    name: 'Critter' },
-    { entity: 'image.armory_person',     name: 'Armory' },
-    { entity: 'image.pancam_person',     name: 'Pan Cam' },
-    { entity: 'image.gatetown_person',   name: 'Gatetown' }
-  ];
-
-  var CALENDARS = [
-    { entity: 'calendar.home',                       color: '#4285f4' },
-    { entity: 'calendar.mikecirioli_gmail_com',      color: '#ea4335' },
-    { entity: 'calendar.birthdays',                  color: '#fbbc04' },
-    { entity: 'calendar.wcpss_24_25_trad_calendar',  color: '#34a853' },
-    { entity: 'calendar.mcirioli_cloudbees_com',     color: '#ff6d01' },
-    { entity: 'calendar.jenkins',                    color: '#46bdc6' }
-  ];
-
-  var CHIPS = [
-    { entity: 'vacuum.sweeping_robot',          icon: '\uD83E\uDDF9', name: 'Roesy' },
-    { entity: 'light.ceiling_light_rgbcw_8f2721', icon: '\uD83D\uDCA1', name: 'Sink' },
-    { entity: 'switch.smart_plug_3',            icon: '\uD83C\uDF32', name: 'Tree' },
-    { entity: 'switch.smart_plug',              icon: '\u26F2',       name: 'Fountain' },
-    { entity: 'switch.smart_plug_2',            icon: '\uD83D\uDC1F', name: 'Pond' }
-  ];
-
-  var WEATHER_ENTITY    = 'weather.forecast_home';
-  var CAMERA_SELECTOR   = 'input_select.camera_selector';
-  var PHOTOFRAME_URL    = '';  // photoframe-server base URL (e.g. http://192.168.1.245:8099) — set via ?photos= param
-
-  var CAM_REFRESH_MS    = 3000;   // camera snapshot refresh
-  var CAM_SYNC_MS       = 1500;   // sync camera selector
-  var CALENDAR_MS       = 300000; // calendar refresh (5 min)
-  var WEATHER_MS        = 300000; // weather refresh (5 min)
-  var DETECT_SLOTS      = 7;      // max detection thumbnails in strip
-  var PHOTO_MS          = 30000;  // screensaver photo interval (30s)
-  var IDLE_TIMEOUT      = 120000; // 2 min → screensaver
-  var SS_DRIFT_MS       = 120000; // reposition overlay (2 min)
-  var FORECAST_DAYS     = 3;
-  var WS_RECONNECT_MS   = 5000;  // reconnect delay on close/error
+  var HA_URL            = C.HA_URL   || '';
+  var HA_TOKEN          = C.HA_TOKEN || '';
+  var PHOTOFRAME_URL    = C.PHOTOFRAME_URL || '';
+  var CAMERAS           = C.CAMERAS  || [];
+  var DETECTIONS        = C.DETECTIONS || [];
+  var CALENDARS         = C.CALENDARS  || [];
+  var CHIPS             = C.CHIPS      || [];
+  var WEATHER_ENTITY    = C.WEATHER_ENTITY  || 'weather.forecast_home';
+  var CAMERA_SELECTOR   = C.CAMERA_SELECTOR || 'input_select.camera_selector';
+  var CAM_REFRESH_MS    = C.CAM_REFRESH_MS  || 3000;
+  var CAM_SYNC_MS       = C.CAM_SYNC_MS     || 1500;
+  var CALENDAR_MS       = C.CALENDAR_MS     || 300000;
+  var WEATHER_MS        = C.WEATHER_MS      || 300000;
+  var DETECT_SLOTS      = C.DETECT_SLOTS    || 7;
+  var PHOTO_MS          = C.PHOTO_MS        || 30000;
+  var IDLE_TIMEOUT      = C.IDLE_TIMEOUT    || 120000;
+  var SS_DRIFT_MS       = C.SS_DRIFT_MS     || 120000;
+  var FORECAST_DAYS     = C.FORECAST_DAYS   || 3;
+  var WS_RECONNECT_MS   = C.WS_RECONNECT_MS || 5000;
 
   // 1x1 transparent GIF — forces Chromium 95 to actually free decoded bitmap
   // (img.src = '' does NOT release GPU memory in this WebView version)
   var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 
-  // URL params override hardcoded config (manual parser — URLSearchParams
-  // not available in standalone Chromium on TSW-1060)
+  // URL params can override config — but Crestron BROWSEROPEN mangles = and &,
+  // so these only work from a real browser, not from the console.
   function getParam(name) {
     var match = location.search.match(new RegExp('[?&]' + name + '=([^&]*)'));
     return match ? decodeURIComponent(match[1]) : null;
@@ -453,10 +426,12 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   var urlToken = getParam('token');
   var urlHaUrl = getParam('ha_url');
   if (urlToken) HA_TOKEN = urlToken;
-  if (urlHaUrl) HA_URL = urlHaUrl.replace(/\/+$/, '');  // strip trailing slash
+  if (urlHaUrl) HA_URL = urlHaUrl.replace(/\/+$/, '');
   var urlPhotos = getParam('photos');
   if (urlPhotos) PHOTOFRAME_URL = urlPhotos.replace(/\/+$/, '');
-  var DEBUG_MODE = getParam('debug') === '1';
+
+  // Debug mode: ?debug=1 (browser) or #debug (Crestron-safe)
+  var DEBUG_MODE = getParam('debug') === '1' || location.hash.indexOf('debug') !== -1;
 
   // Opt-in periodic reload for memory management
   var reloadParam = getParam('reload');
@@ -484,6 +459,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   dbg('URL: ' + location.href);
   dbg('HA_URL: ' + (HA_URL || '(auto-detect pending)'));
   dbg('HA_TOKEN: ' + (HA_TOKEN ? HA_TOKEN.substring(0, 20) + '...' : 'MISSING'));
+  dbg('CrComLib: ' + (typeof window.CrComLib));
   dbg('WebSocket: ' + (typeof WebSocket));
   dbg('fetch: ' + (typeof fetch));
 
@@ -754,17 +730,20 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
   // SIDE BUTTON HANDLER (TSW-1060)
   // ══════════════════════════════════════════════════════════
 
+  // TSW-1060 hardware buttons set e.code but e.key is null
   var BUTTON_MAP = {
-    'BrowserBack':     'go-home',
+    'BrowserBack':     'standby',
     'Home':            'go-home',
     'AudioVolumeUp':   'cam-next',
     'AudioVolumeDown': 'cam-prev',
     'AudioVolumeMute': 'toggle-ss'
   };
 
-  document.addEventListener('keydown', function(e) {
-    var action = BUTTON_MAP[e.key];
+  window.addEventListener('keydown', function(e) {
+    dbg('KEY: code=' + e.code + ' key=' + e.key);
+    var action = BUTTON_MAP[e.code] || BUTTON_MAP[e.key];
     if (!action) return;
+    dbg('BUTTON: ' + action);
     e.preventDefault();
     e.stopPropagation();
 
@@ -802,6 +781,10 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
           cycleCamera('previous');
         }
         startIdleTimer();
+        break;
+      case 'standby':
+        dbg('standby');
+        wsCallService('shell_command', 'crestron_standby');
         break;
     }
   }, true);
@@ -1397,12 +1380,7 @@ document.getElementById('dbg').textContent = 'EARLY: page loaded\nUA: ' + naviga
 
   function init() {
     dbg('init() — showing dashboard');
-    // In debug mode, auto-hide startup overlay after 15s
-    if (DEBUG_MODE) {
-      setTimeout(function() {
-        if (dbgEl) dbgEl.style.display = 'none';
-      }, 15000);
-    }
+    // Keep debug overlay visible in debug mode (no auto-hide)
     showDashboard();
 
     // Screensaver photos served by photoframe-server (no pre-loading needed)

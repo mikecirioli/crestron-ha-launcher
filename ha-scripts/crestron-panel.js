@@ -112,7 +112,8 @@
 
   // ── Side button handler ────────────────────────────────────────
   function handleButton(e) {
-    var mapping = BUTTON_MAP[e.key];
+    // TSW-1060 hardware buttons set e.code but e.key is null
+    var mapping = BUTTON_MAP[e.code] || BUTTON_MAP[e.key];
     if (!mapping) return;
 
     e.preventDefault();
@@ -187,7 +188,7 @@
   // ── Initialize ─────────────────────────────────────────────────
   function init() {
     // Side buttons via keydown
-    document.addEventListener('keydown', handleButton, true);
+    window.addEventListener('keydown', handleButton, true);
 
     // Idle detection via touch/mouse only
     ['touchstart', 'mousedown', 'mousemove'].forEach(function(evt) {

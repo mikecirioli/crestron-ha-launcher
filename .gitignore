@@ -4,3 +4,4 @@ package-lock.json
 clean-frigate.yaml
 screenshot-*.jpg
 ciriolisaver/
+ha-scripts/panel-lite-config.js
