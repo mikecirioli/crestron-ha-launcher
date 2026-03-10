@@ -624,6 +624,57 @@ Panel polls photoframe :8099/random (screensaver)        ▼
 - Verify the cycling automation is enabled (**Settings > Automations**)
 - Check that the dashboard YAML has conditional cards matching the input_select states
 
+## Future Ideas
+
+The photoframe-server's `/frigate/*` proxy pattern can be extended to other data sources. These could appear as dashboard chips, detection strip replacements, screensaver overlays, or dedicated panels.
+
+### Ambient / Visual
+
+| Idea | Source | Notes |
+|------|--------|-------|
+| NASA Astronomy Picture of the Day | `api.nasa.gov/planetary/apod` (free, no key for demo rate) | Daily space image — could mix into screensaver photo rotation |
+| "On This Day" family photos | Local photo library filtered by EXIF date | Photoframe server already has the photos; needs date-aware `/random` mode |
+| Moon phase | Pure math (no API) | Visual moon icon with next full/new moon countdown |
+| Sunrise/sunset countdown | HA `sun.sun` entity or USNO API | "Golden hour in 47 min" |
+
+### Hyper-Local
+
+| Idea | Source | Notes |
+|------|--------|-------|
+| Traffic cameras | NCDOT public JPEG feeds | Free highway cam snapshots on your commute route; could cycle in camera area |
+| Pollen/allergy forecast | Tomorrow.io or Ambee API | Especially useful in NC spring |
+| UV index | HA weather entity or EPA API | "Wear sunscreen" indicator chip |
+| Power outages | Duke Energy outage API | Outage count in your area |
+
+### Practical / Family
+
+| Idea | Source | Notes |
+|------|--------|-------|
+| Package tracking | HA integrations (17track, USPS Informed Delivery) | Chip shows count of in-transit packages |
+| Garbage/recycling day | HA calendar or helper | Chip lights up the night before collection |
+| Commute ETA | Google Maps Distance Matrix API (requires key) | Chip turns red when traffic is bad; show only weekday mornings |
+| Grocery/shopping list | HA shopping list integration | Display shared family list on the panel |
+| Now playing | HA `media_player` entities | Album art + track name when music is playing |
+
+### Fun / Nerdy
+
+| Idea | Source | Notes |
+|------|--------|-------|
+| Planes overhead | ADS-B Exchange or FlightRadar24 API | Aircraft currently over your house — flight number, altitude, destination |
+| ISS pass predictor | N2YO API (free) | "ISS visible tonight at 8:42 PM, look SW" |
+| Sports scores | ESPN API | Live scores for followed teams |
+| Daily quote / dad joke | Various free APIs | Rotate on screensaver overlay |
+
+### Data Visualization (from HA history)
+
+| Idea | Source | Notes |
+|------|--------|-------|
+| 24-hour temperature graph | HA history API | Mini sparkline from weather entity |
+| Frigate motion heatmap | Frigate event counts per camera | Which cameras had the most activity today |
+| Energy usage | HA energy integration (if smart meter available) | Daily usage graph or current draw |
+
+Most of these could be proxied through photoframe-server the same way Frigate is — add an env var for the upstream URL, proxy with CORS headers, and fetch from panel-lite via XHR.
+
 ## License
 
 MIT
