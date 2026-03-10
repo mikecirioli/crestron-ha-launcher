@@ -315,7 +315,7 @@ A single HTML page that renders the entire dashboard and screensaver in one docu
 - **Camera snapshots** — cycles through 7 cameras via `input_select.camera_selector`, 3-second refresh, preloads next image before swap to avoid flicker
 - **Weather + 3-day forecast** — current conditions with high/low temperatures, pulled from HA weather entity via REST API
 - **Calendar** — 7-day lookahead across 6 calendars, color-coded by calendar, fetched via HA REST API with signed URLs
-- **Detection strip** — 7 Frigate person detection thumbnails with relative timestamps ("2m ago"), 30-second polling (no WebSocket)
+- **Detection strip** — last 7 person detections across all cameras (not per-camera), fetched from Frigate's event API via photoframe-server proxy, 30-second polling
 - **Chips bar** — time, date, and entity states (thermostat, locks, etc.) as read-only display chips
 - **Photo frame screensaver** — activates after 2 minutes idle, single `<img>` tag (no crossfade), bouncing clock overlay for anti-burn-in
 - **Side button handling** — hardware buttons cycle cameras, toggle screensaver, standby panel, return to dashboard (uses `e.code` — see button map above)

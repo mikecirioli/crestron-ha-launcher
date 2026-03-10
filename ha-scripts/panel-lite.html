@@ -396,8 +396,8 @@ window.onerror = function(msg, src, line, col, err) {
   var HA_URL            = C.HA_URL   || '';
   var HA_TOKEN          = C.HA_TOKEN || '';
   var PHOTOFRAME_URL    = C.PHOTOFRAME_URL || '';
+  var FRIGATE_URL       = C.FRIGATE_URL || '';
   var CAMERAS           = C.CAMERAS  || [];
-  var DETECTIONS        = C.DETECTIONS || [];
   var CALENDARS         = C.CALENDARS  || [];
   var CHIPS             = C.CHIPS      || [];
   var WEATHER_ENTITY    = C.WEATHER_ENTITY  || 'weather.forecast_home';
@@ -407,6 +407,7 @@ window.onerror = function(msg, src, line, col, err) {
   var CALENDAR_MS       = C.CALENDAR_MS     || 300000;
   var WEATHER_MS        = C.WEATHER_MS      || 300000;
   var DETECT_SLOTS      = C.DETECT_SLOTS    || 7;
+  var DETECT_MS         = C.DETECT_MS       || 30000;
   var PHOTO_MS          = C.PHOTO_MS        || 30000;
   var IDLE_TIMEOUT      = C.IDLE_TIMEOUT    || 120000;
   var SS_DRIFT_MS       = C.SS_DRIFT_MS     || 120000;
@@ -459,7 +460,8 @@ window.onerror = function(msg, src, line, col, err) {
   dbg('URL: ' + location.href);
   dbg('HA_URL: ' + (HA_URL || '(auto-detect pending)'));
   dbg('HA_TOKEN: ' + (HA_TOKEN ? HA_TOKEN.substring(0, 20) + '...' : 'MISSING'));
-  dbg('CrComLib: ' + (typeof window.CrComLib));
+  dbg('FRIGATE: ' + (FRIGATE_URL || 'not configured'));
+  dbg('PHOTOS: ' + (PHOTOFRAME_URL || 'not configured'));
   dbg('WebSocket: ' + (typeof WebSocket));
   dbg('fetch: ' + (typeof fetch));
 
@@ -596,7 +598,7 @@ window.onerror = function(msg, src, line, col, err) {
         states[result[i].entity_id] = result[i];
       }
       dbg('got ' + result.length + ' states');
-      // 2. Subscribe to state changes (keeps cache fresh + drives detections)
+      // 2. Subscribe to state changes (keeps cache fresh)
       wsSend(
         { type: 'subscribe_events', event_type: 'state_changed' },
         function(evt) {
@@ -606,14 +608,6 @@ window.onerror = function(msg, src, line, col, err) {
             states[eid] = evt.data.new_state;
           } else {
             delete states[eid]; // entity removed
-          }
-          // Drive detection strip for detection entities
-          var detName = DETECT_ENTITIES[eid];
-          if (detName && evt.data.new_state) {
-            var ns = evt.data.new_state;
-            if (ns.attributes && ns.attributes.entity_picture) {
-              addDetection(eid, detName, ns.attributes.entity_picture, ns.last_changed);
-            }
           }
         },
         true // subscription
@@ -997,31 +991,40 @@ window.onerror = function(msg, src, line, col, err) {
   }
 
   // ══════════════════════════════════════════════════════════
-  // DASHBOARD: DETECTION STRIP (event-driven FIFO)
+  // DASHBOARD: DETECTION STRIP (Frigate API polling)
   // ══════════════════════════════════════════════════════════
+  // Polls Frigate's /api/events endpoint for the N most recent person
+  // detections across all cameras. Thumbnails served directly by Frigate.
 
-  // Build a lookup set for fast entity matching in the event callback
-  var DETECT_ENTITIES = {};
-  for (var di = 0; di < DETECTIONS.length; di++) {
-    DETECT_ENTITIES[DETECTIONS[di].entity] = DETECTIONS[di].name;
-  }
-
-  // FIFO queue: newest at index 0, max DETECT_SLOTS entries
   var detectionQueue = [];
 
-  function addDetection(entityId, name, picture, changedAt) {
-    // Add to front of queue
-    detectionQueue.unshift({
-      entity: entityId,
-      name: name,
-      picture: picture,
-      time: changedAt
-    });
-    // Trim to max slots
-    if (detectionQueue.length > DETECT_SLOTS) {
-      detectionQueue.length = DETECT_SLOTS;
-    }
-    renderDetectionStrip();
+  function fetchDetections() {
+    if (!FRIGATE_URL) return;
+    var url = FRIGATE_URL + '/api/events?limit=' + DETECT_SLOTS +
+              '&has_snapshot=1&label=person';
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.timeout = 10000;
+    xhr.onload = function() {
+      if (xhr.status !== 200) return;
+      try {
+        var events = JSON.parse(xhr.responseText);
+        detectionQueue = [];
+        for (var i = 0; i < events.length && i < DETECT_SLOTS; i++) {
+          var ev = events[i];
+          detectionQueue.push({
+            id: ev.id,
+            camera: ev.camera,
+            time: new Date(ev.start_time * 1000).toISOString()
+          });
+        }
+        renderDetectionStrip();
+      } catch (e) {
+        dbg('detection parse error: ' + e.message);
+      }
+    };
+    xhr.onerror = function() { dbg('detection fetch error'); };
+    xhr.send();
   }
 
   function renderDetectionStrip() {
@@ -1036,66 +1039,23 @@ window.onerror = function(msg, src, line, col, err) {
       html += '<div class="det">';
       if (i < detectionQueue.length) {
         var det = detectionQueue[i];
+        var thumbUrl = FRIGATE_URL + '/api/events/' + det.id + '/thumbnail.jpg';
         html += '<div class="det-img">';
-        if (det.picture) {
-          html += '<img data-pic="' + det.picture + '" alt="">';
-        }
+        html += '<img src="' + thumbUrl + '" alt="">';
         html += '</div>';
         html += '<div class="det-info">';
-        html += '<span class="det-name">' + esc(det.name) + '</span>';
-        if (det.time) {
-          html += ' <span class="det-time">' + fmtTime(det.time) + '</span>';
-        }
+        html += '<span class="det-name">' + esc(det.camera) + '</span>';
+        html += ' <span class="det-time">' + fmtTime(det.time) + '</span>';
         html += '</div>';
       } else {
-        // Empty slot
         html += '<div class="det-img"></div>';
         html += '<div class="det-info"><span class="det-name" style="opacity:0.3">No detection</span></div>';
       }
       html += '</div>';
     }
     el.innerHTML = html;
-
-    // Sign and load detection images
-    var imgs = el.querySelectorAll('img[data-pic]');
-    for (var j = 0; j < imgs.length; j++) {
-      (function(img) {
-        var p = img.getAttribute('data-pic');
-        var sep = p.indexOf('?') > -1 ? '&' : '?';
-        signPath(p + sep + 't=' + Date.now(), function(url) {
-          if (url) img.src = url;
-        });
-      })(imgs[j]);
-    }
   }
 
-  // subscribeDetections is now handled in wsBootstrap() via the unified state_changed subscription
-
-  // Seed the strip with current detection states on startup
-  function seedDetections() {
-    // Gather all detection entities that have pictures, sort by last_changed
-    var initial = [];
-    for (var i = 0; i < DETECTIONS.length; i++) {
-      var det = DETECTIONS[i];
-      var st = states[det.entity];
-      if (st && st.attributes && st.attributes.entity_picture) {
-        initial.push({
-          entity: det.entity,
-          name: det.name,
-          picture: st.attributes.entity_picture,
-          time: st.last_changed
-        });
-      }
-    }
-    // Sort newest first
-    initial.sort(function(a, b) {
-      return (b.time || '').localeCompare(a.time || '');
-    });
-    detectionQueue = initial.slice(0, DETECT_SLOTS);
-    renderDetectionStrip();
-  }
-
-  // Update relative timestamps periodically (without re-fetching images)
   function updateDetectionTimes() {
     var infos = document.querySelectorAll('.det-time');
     for (var i = 0; i < infos.length && i < detectionQueue.length; i++) {
@@ -1115,7 +1075,7 @@ window.onerror = function(msg, src, line, col, err) {
     refreshCamera();
     renderChips();
     renderWeather();
-    seedDetections();
+    fetchDetections();
     fetchCalendar();
 
     camRefreshInterval = setInterval(refreshCamera, CAM_REFRESH_MS);
@@ -1123,7 +1083,8 @@ window.onerror = function(msg, src, line, col, err) {
     dashTimers.push(camRefreshInterval, camSyncInterval);
     dashTimers.push(setInterval(renderChips, 30000));
     dashTimers.push(setInterval(renderWeather, WEATHER_MS));
-    dashTimers.push(setInterval(updateDetectionTimes, 60000)); // update relative timestamps every minute
+    dashTimers.push(setInterval(fetchDetections, DETECT_MS));
+    dashTimers.push(setInterval(updateDetectionTimes, 60000));
     dashTimers.push(setInterval(fetchCalendar, CALENDAR_MS));
   }
 

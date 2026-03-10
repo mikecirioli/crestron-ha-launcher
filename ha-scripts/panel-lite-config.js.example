@@ -8,6 +8,7 @@ window.PANEL_CONFIG = {
   HA_URL:   '',  // leave empty to auto-detect from page origin
   HA_TOKEN: 'YOUR_LONG_LIVED_TOKEN_HERE',
   PHOTOFRAME_URL: 'http://192.168.1.245:8099',
+  FRIGATE_URL: 'http://YOUR_PHOTOFRAME_HOST:8099/frigate',  // proxied through photoframe-server
 
   // ── Cameras ────────────────────────────────────────────────
   CAMERAS: [

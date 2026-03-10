@@ -132,6 +132,7 @@ rm /home/youruser/photos/old-photo.jpg
 | `/` | Full-screen HTML page with fade transitions and clock overlay | Point any browser or kiosk at this |
 | `/random` | A random image file with proper content-type | API endpoint for custom dashboards |
 | `/random?w=1280&h=800` | Random image resized on the fly | Bandwidth-friendly for constrained devices |
+| `/frigate/*` | Proxied Frigate API (requires `FRIGATE_URL` env var) | Detection strip in Panel Lite |
 | `/health` | `ok` | Container/load balancer health check |
 
 ## Configuration
@@ -144,6 +145,7 @@ All configuration is via environment variables in `docker-compose.yaml`:
 | `PORT` | `8099` | Listen port |
 | `REFRESH` | `30` | Seconds between photo changes |
 | `TITLE` | _(empty)_ | Optional text shown in the clock overlay |
+| `FRIGATE_URL` | _(empty)_ | Frigate base URL for detection proxy (e.g. `http://192.168.1.207:5000`). When set, `/frigate/*` requests are proxied to Frigate with CORS headers, enabling the Panel Lite detection strip to fetch events cross-origin. |
 
 ## Optional: Weather Overlay (requires Home Assistant)
 
@@ -208,4 +210,7 @@ jpg, jpeg, png, webp, gif, bmp — any mix in the same directory.
 
 ## Integration with Panel Lite Dashboard
 
-If you're running the [Panel Lite](../) Home Assistant dashboard, the screensaver can fetch photos from this server instead of a static JSON list. Set `PHOTOFRAME_URL` in your deployed `panel-lite.html` or pass `?photos=http://<server-ip>:8099` as a URL parameter. This eliminates the need for `photoframe_build_list.py` and numbered filenames.
+If you're running the [Panel Lite](../) Home Assistant dashboard:
+
+- **Screensaver photos**: Set `PHOTOFRAME_URL` in `panel-lite-config.js` to `http://<server-ip>:8099`. The screensaver fetches random photos via `/random?w=1280&h=800`.
+- **Detection strip**: Set `FRIGATE_URL` env var in docker-compose and `FRIGATE_URL` in `panel-lite-config.js` to `http://<server-ip>:8099/frigate`. The detection strip polls `/frigate/api/events` for the most recent person detections across all cameras, with thumbnails served via `/frigate/api/events/<id>/thumbnail.jpg`. The proxy adds CORS headers so the browser can fetch cross-origin.

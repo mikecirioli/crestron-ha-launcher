@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Minimal HTTP server that serves random photos from a directory.
+Minimal HTTP server that serves random photos from a directory,
+with optional Frigate API proxy for detection thumbnails.
 
 Endpoints:
   /              HTML page — full-screen photo frame with auto-refresh and clock overlay
   /random        Returns a random image file (JPEG/PNG/WebP) with proper content-type
   /random?w=1280&h=800  Resize on the fly (requires Pillow)
+  /frigate/*     Proxy to Frigate API (requires FRIGATE_URL env var, adds CORS headers)
   /health        Health check
 
 Environment variables:
@@ -13,6 +15,7 @@ Environment variables:
   PORT           Listen port (default: 8099)
   REFRESH        Seconds between photo changes on the HTML page (default: 30)
   TITLE          Page title / overlay text (default: empty)
+  FRIGATE_URL    Frigate base URL for proxy (e.g. http://192.168.1.207:5000)
 
 Usage:
   python3 server.py
@@ -27,10 +30,17 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from io import BytesIO
 
+try:
+    from urllib.request import urlopen, Request
+    from urllib.error import URLError
+except ImportError:
+    from urllib2 import urlopen, Request, URLError
+
 PHOTO_DIR = os.environ.get("PHOTO_DIR", "/media")
 PORT = int(os.environ.get("PORT", "8099"))
 REFRESH = int(os.environ.get("REFRESH", "30"))
 TITLE = os.environ.get("TITLE", "")
+FRIGATE_URL = os.environ.get("FRIGATE_URL", "")  # e.g. http://192.168.1.207:5000
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 
 # Cache the file list, refresh periodically
@@ -231,6 +241,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_html()
         elif path == "/random":
             self.serve_random(parsed)
+        elif path.startswith("/frigate") and FRIGATE_URL:
+            self.proxy_frigate(parsed)
         elif path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -238,6 +250,30 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok")
         else:
             self.send_error(404)
+
+    def proxy_frigate(self, parsed):
+        """Proxy requests to Frigate API. /frigate/foo → FRIGATE_URL/foo"""
+        # Strip the /frigate prefix and forward the rest
+        downstream = parsed.path[len("/frigate"):]
+        if not downstream:
+            downstream = "/"
+        url = FRIGATE_URL + downstream
+        if parsed.query:
+            url += "?" + parsed.query
+        try:
+            req = Request(url)
+            resp = urlopen(req, timeout=10)
+            data = resp.read()
+            ct = resp.headers.get("Content-Type", "application/octet-stream")
+            self.send_response(resp.status)
+            self.send_header("Content-Type", ct)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_error(502, "Frigate proxy error: {}".format(e))
 
     def serve_html(self):
         title_div = '<div class="title">{}</div>'.format(TITLE) if TITLE else ""
