@@ -521,6 +521,75 @@ These can be run anytime via `crestron_cmd.py` to check panel health:
 | `UPTIME` | Check how long since last reboot |
 | `TASKSTAT` | Show per-process CPU time (useful for finding runaway services) |
 
+## Network Architecture
+
+The system uses three hosts on the LAN, with the Crestron panel connecting to HA and the photoframe server:
+
+```
+┌─────────────────────┐
+│  Crestron TSW-1060   │
+│  192.168.1.58        │
+│                      │
+│  Loads panel-lite    │───────┐
+│  from HA :8123       │       │
+│  Photos from :8099   │──┐    │
+│  Detections via :8099│──┤    │
+└─────────────────────┘  │    │
+                          │    │
+┌─────────────────────┐  │    │  ┌─────────────────────┐
+│  HA Host             │  │    │  │  Frigate Host        │
+│  192.168.1.245       │  │    │  │  192.168.1.207       │
+│                      │◀─┘    │  │  (ardbeg)            │
+│  :8123  HA (host net)│◀──────┘  │                      │
+│  :8099  photoframe   │─────────▶│  :5000  Frigate API  │
+│  :80    nginx → HTTPS│          │                      │
+│  :443   nginx (ext)  │          └─────────────────────┘
+│  :1883  mosquitto    │
+└─────────────────────┘
+```
+
+### Services on the HA Host (192.168.1.245)
+
+| Service | Port | Network Mode | Purpose |
+|---------|------|-------------|---------|
+| Home Assistant | 8123 | host | Dashboard, automations, WebSocket API |
+| photoframe-server | 8099 | bridge | Screensaver photos (`/random`) and Frigate API proxy (`/frigate/*`) |
+| nginx | 80, 443 | bridge | HTTPS reverse proxy for external access (`cirioli.duckdns.org`) |
+| Mosquitto | 1883 | host | MQTT broker (Frigate events, device integrations) |
+| Watchtower | — | bridge | Auto-updates container images |
+
+### External Access
+
+The nginx reverse proxy handles external (internet) access:
+
+- `https://cirioli.duckdns.org/` → HA (with WebSocket upgrade for app)
+- Port 80 redirects to HTTPS
+- Frigate is **not** exposed externally (no authentication). Use VPN for remote Frigate access.
+
+### Data Flow: Detection Strip
+
+The detection strip avoids CORS issues by proxying Frigate through the photoframe server:
+
+```
+Panel (8123 origin) ──XHR──▶ photoframe:8099/frigate/api/events ──▶ Frigate:5000/api/events
+                                        (CORS: Access-Control-Allow-Origin: *)
+Panel ◀──── JSON event list (id, camera, start_time)
+
+Panel ──<img src>──▶ photoframe:8099/frigate/api/events/<id>/thumbnail.jpg ──▶ Frigate:5000
+                                        (images exempt from CORS, but proxy keeps it simple)
+```
+
+### Data Flow: Boot Sequence
+
+```
+Panel boots → CH5 app → webhook → HA automation → SSH → BROWSEROPEN panel-lite.html
+                                                         │
+Panel loads panel-lite-config.js (HA_TOKEN, URLs)        │
+Panel opens WebSocket to HA :8123 (entity states)        │
+Panel polls photoframe :8099/frigate/* (detections)      │
+Panel polls photoframe :8099/random (screensaver)        ▼
+```
+
 ## Troubleshooting
 
 **URL params don't work from BROWSEROPEN**
