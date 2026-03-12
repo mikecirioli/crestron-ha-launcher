@@ -480,6 +480,8 @@ window.onerror = function(msg, src, line, col, err) {
   var SS_DRIFT_MS       = C.SS_DRIFT_MS     || 120000;
   var FORECAST_DAYS     = C.FORECAST_DAYS   || 3;
   var WS_RECONNECT_MS   = C.WS_RECONNECT_MS || 5000;
+  var WATCH_REFRESH_MS  = C.WATCH_REFRESH_MS || 2000;
+  var WATCH_TIMEOUT_MS  = C.WATCH_TIMEOUT_MS || 300000; // 5 min
 
   // 1x1 transparent GIF — forces Chromium 95 to actually free decoded bitmap
   // (img.src = '' does NOT release GPU memory in this WebView version)
@@ -532,6 +534,10 @@ window.onerror = function(msg, src, line, col, err) {
   var idleTimer = null;
   var manualScreensaver = false;
   var isScreensaver = false;
+  var isCameraWatch = false;
+  var watchCamIdx = -1;
+  var cwRefreshInterval = null;
+  var cwTimeoutTimer = null;
 
   // Screensaver photo state
   var ssLoadTimer = null;
@@ -755,19 +761,39 @@ window.onerror = function(msg, src, line, col, err) {
 
   function showDashboard() {
     isScreensaver = false;
+    isCameraWatch = false;
     ssEl.classList.add('hidden');
     dashEl.classList.remove('hidden');
     stopScreensaver();
+    stopCameraWatch();
     startDashboardTimers();
     startIdleTimer();
   }
 
   function showScreensaver() {
     isScreensaver = true;
+    isCameraWatch = false;
     dashEl.classList.add('hidden');
     ssEl.classList.remove('hidden');
     stopDashboardTimers();
+    stopCameraWatch();
     startScreensaver();
+  }
+
+  function showCameraWatch(camIdx) {
+    isCameraWatch = true;
+    isScreensaver = true;  // reuse overlay bounce + clock updates
+    watchCamIdx = (camIdx >= 0 && camIdx < CAMERAS.length) ? camIdx : curCam;
+    dashEl.classList.add('hidden');
+    ssEl.classList.remove('hidden');
+    stopDashboardTimers();
+    stopScreensaver();
+    startCameraWatch();
+    clearTimeout(idleTimer);
+    cwTimeoutTimer = setTimeout(function() {
+      dbg('cw: timeout, returning to dashboard');
+      showDashboard();
+    }, WATCH_TIMEOUT_MS);
   }
 
   // ══════════════════════════════════════════════════════════
@@ -792,6 +818,15 @@ window.onerror = function(msg, src, line, col, err) {
   // Touch/mouse only (not keydown, to avoid conflicts with side buttons)
   ['touchstart', 'mousedown', 'mousemove'].forEach(function(evt) {
     document.addEventListener(evt, onActivity, { capture: true, passive: true });
+  });
+
+  // Chip click delegation (chips rebuilt via innerHTML, so use permanent listener)
+  document.getElementById('chips-bar').addEventListener('click', function(e) {
+    var t = e.target;
+    while (t && t !== this) {
+      if (t.id === 'chip-watch') { showCameraWatch(curCam); return; }
+      t = t.parentElement;
+    }
   });
 
   // ══════════════════════════════════════════════════════════
@@ -831,7 +866,9 @@ window.onerror = function(msg, src, line, col, err) {
         }
         break;
       case 'cam-next':
-        if (isScreensaver) {
+        if (isCameraWatch) {
+          cycleWatchCamera('next');
+        } else if (isScreensaver) {
           manualScreensaver = false;
           showDashboard();
           setTimeout(function() { cycleCamera('next'); }, 300);
@@ -841,7 +878,9 @@ window.onerror = function(msg, src, line, col, err) {
         startIdleTimer();
         break;
       case 'cam-prev':
-        if (isScreensaver) {
+        if (isCameraWatch) {
+          cycleWatchCamera('prev');
+        } else if (isScreensaver) {
           manualScreensaver = false;
           showDashboard();
           setTimeout(function() { cycleCamera('previous'); }, 300);
@@ -876,6 +915,7 @@ window.onerror = function(msg, src, line, col, err) {
     var html = '';
     html += '<div class="chip"><span class="chip-icon">\u23F0</span>' + esc(timeStr) + '</div>';
     html += '<div class="chip"><span class="chip-icon">\uD83D\uDCC5</span>' + esc(dateStr) + '</div>';
+    html += '<div class="chip" id="chip-watch"><span class="chip-icon">\uD83D\uDCF9</span>Watch</div>';
     html += '<div class="chip-spacer"></div>';
 
     for (var i = 0; i < CHIPS.length; i++) {
@@ -1258,6 +1298,79 @@ window.onerror = function(msg, src, line, col, err) {
   }
 
   // ══════════════════════════════════════════════════════════
+  // CAMERA WATCH MODE
+  // ══════════════════════════════════════════════════════════
+  // Full-screen single-camera view reusing the screensaver DOM.
+  // Refreshes snapshots at WATCH_REFRESH_MS. Returns to dashboard
+  // after WATCH_TIMEOUT_MS or on touch/click.
+
+  var cwPending = false;
+
+  function startCameraWatch() {
+    dbg('cw: start, camera=' + (CAMERAS[watchCamIdx] ? CAMERAS[watchCamIdx].name : '?'));
+    refreshWatchCamera();
+    cwRefreshInterval = setInterval(refreshWatchCamera, WATCH_REFRESH_MS);
+    renderSSClock();
+    renderSSWeather();
+    renderSSNextEvent();
+    renderSSDebug();
+  }
+
+  function stopCameraWatch() {
+    if (cwRefreshInterval) { clearInterval(cwRefreshInterval); cwRefreshInterval = null; }
+    if (cwTimeoutTimer) { clearTimeout(cwTimeoutTimer); cwTimeoutTimer = null; }
+    cwPending = false;
+    // Release images (stopScreensaver handles the ss-photo elements)
+  }
+
+  function refreshWatchCamera() {
+    if (watchCamIdx < 0 || watchCamIdx >= CAMERAS.length) return;
+    if (cwPending) return;
+    cwPending = true;
+    var cam = CAMERAS[watchCamIdx];
+    signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
+      if (!url) { cwPending = false; return; }
+      var back = (ssFront === 'a') ? ssPhotoB : ssPhotoA;
+      var front = (ssFront === 'a') ? ssPhotoA : ssPhotoB;
+      back.onload = function() {
+        back.classList.add('visible');
+        setTimeout(function() {
+          front.classList.remove('visible');
+          front.onload = null;
+          front.onerror = null;
+          front.src = BLANK;
+        }, 400);
+        ssFront = (ssFront === 'a') ? 'b' : 'a';
+        cwPending = false;
+      };
+      back.onerror = function() {
+        dbg('cw: load failed');
+        cwPending = false;
+      };
+      back.src = url;
+    });
+  }
+
+  function cycleWatchCamera(dir) {
+    if (CAMERAS.length < 2) return;
+    if (dir === 'next') {
+      watchCamIdx = (watchCamIdx + 1) % CAMERAS.length;
+    } else {
+      watchCamIdx = (watchCamIdx - 1 + CAMERAS.length) % CAMERAS.length;
+    }
+    dbg('cw: cycle to ' + CAMERAS[watchCamIdx].name);
+    cwPending = false;
+    refreshWatchCamera();
+    renderSSClock(); // update camera name in overlay
+    // Reset the 5-min timeout on interaction
+    if (cwTimeoutTimer) clearTimeout(cwTimeoutTimer);
+    cwTimeoutTimer = setTimeout(function() {
+      dbg('cw: timeout, returning to dashboard');
+      showDashboard();
+    }, WATCH_TIMEOUT_MS);
+  }
+
+  // ══════════════════════════════════════════════════════════
   // DASHBOARD TIMER MANAGEMENT
   // ══════════════════════════════════════════════════════════
 
@@ -1364,8 +1477,11 @@ window.onerror = function(msg, src, line, col, err) {
     var now = new Date();
     document.getElementById('ss-clock').textContent =
       now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    document.getElementById('ss-date').textContent =
-      now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    var dateText = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    if (isCameraWatch && watchCamIdx >= 0 && CAMERAS[watchCamIdx]) {
+      dateText = CAMERAS[watchCamIdx].name + '  \u00B7  ' + dateText;
+    }
+    document.getElementById('ss-date').textContent = dateText;
   }
 
   function renderSSWeather() {

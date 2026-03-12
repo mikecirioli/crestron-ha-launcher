@@ -54,6 +54,10 @@ window.PANEL_CONFIG = {
   // ── Thermostat ─────────────────────────────────────────────
   THERMOSTAT_ENTITY: 'climate.upper_level',  // leave empty to hide
 
+  // ── Camera Watch Mode ──────────────────────────────────────
+  WATCH_REFRESH_MS: 2000,       // snapshot refresh rate (default 2s)
+  WATCH_TIMEOUT_MS: 300000,     // return to dashboard after 5 min
+
   // ── Other Entities ─────────────────────────────────────────
   WEATHER_ENTITY:  'weather.forecast_home',
   CAMERA_SELECTOR: 'input_select.camera_selector',
