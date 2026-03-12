@@ -119,8 +119,8 @@
 
   /* Weather section */
   .weather-section {
-    flex: 0 0 170px;
-    padding: 12px 16px;
+    flex: 0 0 auto;
+    padding: 10px 16px 6px;
     background: rgba(0,0,0,0.2);
     overflow: hidden;
   }
@@ -128,36 +128,98 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
   }
   .weather-temp {
-    font-size: 42px;
+    font-size: 38px;
     font-weight: 300;
     line-height: 1;
   }
   .weather-detail {
-    font-size: 14px;
+    font-size: 13px;
     opacity: 0.8;
     line-height: 1.4;
   }
-  .weather-forecast {
-    display: flex;
-    gap: 12px;
-    margin-top: 8px;
+
+  /* Hourly forecast bars */
+  .hourly-forecast {
+    margin-top: 6px;
     border-top: 1px solid rgba(255,255,255,0.1);
-    padding-top: 8px;
+    padding-top: 6px;
   }
-  .wf-day {
-    text-align: center;
+  .hf-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
     font-size: 12px;
-    opacity: 0.85;
-    line-height: 1.4;
-    flex: 1;
   }
-  .wf-day .wf-name { font-weight: 600; font-size: 13px; }
-  .wf-day .wf-hi { font-weight: 500; }
-  .wf-day .wf-lo { opacity: 0.5; }
-  .wf-day .wf-cond { font-size: 11px; opacity: 0.6; }
+  .hf-time {
+    width: 42px;
+    text-align: right;
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+  .hf-icon {
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+    font-size: 13px;
+  }
+  .hf-temp {
+    width: 32px;
+    text-align: right;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .hf-bar-bg {
+    flex: 1;
+    height: 8px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .hf-bar-fill {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #4fc3f7, #ff8a65);
+  }
+
+  /* Thermostat section */
+  .thermostat-section {
+    flex: 0 0 auto;
+    padding: 8px 16px;
+    background: rgba(0,0,0,0.15);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+  }
+  .thermo-temp {
+    font-size: 22px;
+    font-weight: 300;
+    line-height: 1;
+  }
+  .thermo-detail {
+    font-size: 12px;
+    opacity: 0.7;
+    line-height: 1.3;
+  }
+  .thermo-action {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: auto;
+  }
+  .thermo-action.cooling { background: rgba(79,195,247,0.2); color: #4fc3f7; }
+  .thermo-action.heating { background: rgba(255,138,101,0.2); color: #ff8a65; }
+  .thermo-action.idle { background: rgba(255,255,255,0.08); color: #888; }
+  .thermo-action.off { background: rgba(255,255,255,0.05); color: #666; }
 
   /* Calendar section */
   .calendar-section {
@@ -172,14 +234,16 @@
   .calendar-section::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 
   .cal-day-header {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: #fff;
-    margin: 10px 0 3px 10px;
+    margin: 8px 0 3px 10px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
   .cal-day-header:first-child { margin-top: 6px; }
+  .cal-day-header.today { color: #4fc3f7; }
+  .cal-day-header.tomorrow { color: #81c784; }
   .cal-event {
     padding: 4px 10px;
     border-left: 4px solid;
@@ -349,6 +413,7 @@
       </div>
       <div class="info-area">
         <div class="weather-section" id="weather-section"></div>
+        <div class="thermostat-section" id="thermostat-section"></div>
         <div class="calendar-section" id="calendar-section"></div>
       </div>
     </div>
@@ -401,6 +466,8 @@ window.onerror = function(msg, src, line, col, err) {
   var CALENDARS         = C.CALENDARS  || [];
   var CHIPS             = C.CHIPS      || [];
   var WEATHER_ENTITY    = C.WEATHER_ENTITY  || 'weather.forecast_home';
+  var THERMOSTAT_ENTITY = C.THERMOSTAT_ENTITY || '';
+  var HOURLY_HOURS      = C.HOURLY_HOURS   || 5;
   var CAMERA_SELECTOR   = C.CAMERA_SELECTOR || 'input_select.camera_selector';
   var CAM_REFRESH_MS    = C.CAM_REFRESH_MS  || 3000;
   var CAM_SYNC_MS       = C.CAM_SYNC_MS     || 1500;
@@ -433,15 +500,6 @@ window.onerror = function(msg, src, line, col, err) {
 
   // Debug mode: ?debug=1 (browser) or #debug (Crestron-safe)
   var DEBUG_MODE = getParam('debug') === '1' || location.hash.indexOf('debug') !== -1;
-
-  // Opt-in periodic reload for memory management
-  var reloadParam = getParam('reload');
-  if (reloadParam) {
-    var reloadMs = parseInt(reloadParam, 10) * 1000;
-    if (reloadMs > 0) {
-      setTimeout(function() { location.reload(); }, reloadMs);
-    }
-  }
 
   // ══════════════════════════════════════════════════════════
   // DEBUG STATUS OVERLAY
@@ -613,7 +671,7 @@ window.onerror = function(msg, src, line, col, err) {
         true // subscription
       );
 
-      // 3. Subscribe to weather forecast
+      // 3. Subscribe to daily weather forecast
       wsSend(
         { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: WEATHER_ENTITY },
         function(msg) {
@@ -621,6 +679,18 @@ window.onerror = function(msg, src, line, col, err) {
             forecastData = msg.forecast;
             renderWeather();
             renderSSWeather();
+          }
+        },
+        true // subscription
+      );
+
+      // 3b. Subscribe to hourly weather forecast
+      wsSend(
+        { type: 'weather/subscribe_forecast', forecast_type: 'hourly', entity_id: WEATHER_ENTITY },
+        function(msg) {
+          if (msg && msg.forecast) {
+            hourlyData = msg.forecast;
+            renderWeather();
           }
         },
         true // subscription
@@ -678,6 +748,10 @@ window.onerror = function(msg, src, line, col, err) {
   // ══════════════════════════════════════════════════════════
   // VIEW SWITCHING
   // ══════════════════════════════════════════════════════════
+
+  // ── Reload-based transitions ─────────────────────────────
+  // Every dash↔screensaver transition reloads the page for a
+  // clean memory slate.  Hash fragments carry intent + debug flag.
 
   function showDashboard() {
     isScreensaver = false;
@@ -870,7 +944,20 @@ window.onerror = function(msg, src, line, col, err) {
   // ══════════════════════════════════════════════════════════
 
   var forecastData = null;
+  var hourlyData = null;
   var calendarEvents = [];
+
+  var conditionIcons = {
+    'clear-night': '\uD83C\uDF19', 'cloudy': '\u2601\uFE0F', 'fog': '\uD83C\uDF2B\uFE0F',
+    'hail': '\uD83C\uDF28\uFE0F', 'lightning': '\u26A1', 'lightning-rainy': '\u26C8\uFE0F',
+    'partlycloudy': '\u26C5', 'pouring': '\uD83C\uDF27\uFE0F', 'rainy': '\uD83C\uDF27\uFE0F',
+    'snowy': '\u2744\uFE0F', 'snowy-rainy': '\uD83C\uDF28\uFE0F', 'sunny': '\u2600\uFE0F',
+    'windy': '\uD83D\uDCA8', 'windy-variant': '\uD83D\uDCA8', 'exceptional': '\u26A0\uFE0F'
+  };
+
+  function condIcon(condition) {
+    return conditionIcons[condition] || '\uD83C\uDF24\uFE0F';
+  }
 
   function renderWeather() {
     var entity = states[WEATHER_ENTITY];
@@ -883,26 +970,38 @@ window.onerror = function(msg, src, line, col, err) {
 
     var html = '';
     html += '<div class="weather-current">';
-    html += '<div class="weather-temp">' + temp + '<span style="font-size:20px">' + esc(unit) + '</span></div>';
+    html += '<div class="weather-temp">' + temp + '<span style="font-size:18px">' + esc(unit) + '</span></div>';
     html += '<div class="weather-detail">' + esc(cond);
     if (humid != null) html += '<br>Humidity: ' + humid + '%';
     html += '</div>';
     html += '</div>';
 
-    // Forecast
-    if (forecastData && forecastData.length > 1) {
-      html += '<div class="weather-forecast">';
-      var days = forecastData.slice(1, FORECAST_DAYS + 1);
-      for (var i = 0; i < days.length; i++) {
-        var day = days[i];
-        var hi = Math.round(day.temperature);
-        var lo = day.templow != null ? Math.round(day.templow) : '';
-        html += '<div class="wf-day">';
-        html += '<div class="wf-name">' + shortDay(day.datetime.split('T')[0]) + '</div>';
-        html += '<div><span class="wf-hi">' + hi + '\u00B0</span>';
-        if (lo !== '') html += ' <span class="wf-lo">' + lo + '\u00B0</span>';
-        html += '</div>';
-        html += '<div class="wf-cond">' + formatCondition(day.condition) + '</div>';
+    // Hourly forecast bars
+    if (hourlyData && hourlyData.length > 0) {
+      var hours = hourlyData.slice(0, HOURLY_HOURS);
+      // Find temp range for bar scaling
+      var temps = hours.map(function(h) { return h.temperature; });
+      var minT = Math.min.apply(null, temps);
+      var maxT = Math.max.apply(null, temps);
+      var range = maxT - minT;
+      if (range < 2) { minT -= 1; maxT += 1; range = maxT - minT; }
+
+      html += '<div class="hourly-forecast">';
+      for (var i = 0; i < hours.length; i++) {
+        var h = hours[i];
+        var hTemp = Math.round(h.temperature);
+        var hTime = new Date(h.datetime);
+        var timeStr = hTime.toLocaleTimeString([], { hour: 'numeric' });
+        var pct = ((h.temperature - minT) / range) * 100;
+        // Bar starts from left edge proportional to temp, width is a dot-like indicator
+        var left = Math.max(0, Math.min(pct - 4, 92));
+        var width = Math.max(8, 100 - left);
+
+        html += '<div class="hf-row">';
+        html += '<span class="hf-time">' + esc(timeStr) + '</span>';
+        html += '<span class="hf-icon">' + condIcon(h.condition) + '</span>';
+        html += '<span class="hf-temp">' + hTemp + '\u00B0</span>';
+        html += '<div class="hf-bar-bg"><div class="hf-bar-fill" style="left:' + left + '%;width:' + width + '%"></div></div>';
         html += '</div>';
       }
       html += '</div>';
@@ -911,7 +1010,46 @@ window.onerror = function(msg, src, line, col, err) {
     document.getElementById('weather-section').innerHTML = html;
   }
 
-  // subscribeForecast is now handled in wsBootstrap()
+  // ══════════════════════════════════════════════════════════
+  // DASHBOARD: THERMOSTAT
+  // ══════════════════════════════════════════════════════════
+
+  function renderThermostat() {
+    var el = document.getElementById('thermostat-section');
+    if (!THERMOSTAT_ENTITY) { el.style.display = 'none'; return; }
+    var entity = states[THERMOSTAT_ENTITY];
+    if (!entity) { el.style.display = 'none'; return; }
+
+    var attrs = entity.attributes;
+    var currentTemp = attrs.current_temperature != null ? Math.round(attrs.current_temperature) : '--';
+    var unit = attrs.temperature_unit || (states[WEATHER_ENTITY] && states[WEATHER_ENTITY].attributes.temperature_unit) || '\u00B0F';
+    var action = attrs.hvac_action || entity.state;  // hvac_action if available, else mode
+    var actionLabel = formatCondition(action);
+
+    // Target temp display
+    var target = '';
+    if (attrs.temperature != null) {
+      target = Math.round(attrs.temperature) + '\u00B0';
+    } else if (attrs.target_temp_high != null && attrs.target_temp_low != null) {
+      target = Math.round(attrs.target_temp_low) + '\u00B0\u2013' + Math.round(attrs.target_temp_high) + '\u00B0';
+    }
+
+    var actionClass = 'idle';
+    if (action === 'cooling') actionClass = 'cooling';
+    else if (action === 'heating') actionClass = 'heating';
+    else if (action === 'off' || entity.state === 'off') actionClass = 'off';
+
+    var html = '';
+    html += '<span style="font-size:18px;opacity:0.7">\uD83C\uDF21\uFE0F</span>';
+    html += '<div class="thermo-temp">' + currentTemp + '<span style="font-size:12px">' + esc(unit) + '</span></div>';
+    html += '<div class="thermo-detail">';
+    if (target && entity.state !== 'off') html += 'Set: ' + target;
+    html += '</div>';
+    html += '<div class="thermo-action ' + actionClass + '">' + esc(actionLabel) + '</div>';
+
+    el.style.display = '';
+    el.innerHTML = html;
+  }
 
   // ══════════════════════════════════════════════════════════
   // DASHBOARD: CALENDAR
@@ -952,17 +1090,43 @@ window.onerror = function(msg, src, line, col, err) {
     });
     calendarEvents = events;
 
+    var now = new Date();
+    var todayStr = now.toISOString().split('T')[0];
+    var tomorrow = new Date(now.getTime() + 86400000);
+    var tomorrowStr = tomorrow.toISOString().split('T')[0];
+
     var html = '';
     var lastDay = '';
 
-    for (var i = 0; i < events.length; i++) {
-      var ev = events[i];
+    // Filter out past events (except all-day events for today)
+    var filtered = [];
+    for (var j = 0; j < events.length; j++) {
+      var ev = events[j];
+      var eEnd = ev.end ? (ev.end.dateTime || ev.end.date) : (ev.start.dateTime || ev.start.date);
+      if (new Date(eEnd) >= now) filtered.push(ev);
+    }
+
+    for (var i = 0; i < filtered.length; i++) {
+      var ev = filtered[i];
       var s = ev.start.dateTime || ev.start.date;
       var d = new Date(s);
-      var dayKey = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      var evDay = s.split('T')[0] || s;
+
+      // Determine day label with contextual names
+      var dayKey;
+      var dayClass = '';
+      if (evDay === todayStr) {
+        dayKey = 'Today';
+        dayClass = ' today';
+      } else if (evDay === tomorrowStr) {
+        dayKey = 'Tomorrow';
+        dayClass = ' tomorrow';
+      } else {
+        dayKey = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      }
 
       if (dayKey !== lastDay) {
-        html += '<div class="cal-day-header">' + esc(dayKey) + '</div>';
+        html += '<div class="cal-day-header' + dayClass + '">' + esc(dayKey) + '</div>';
         lastDay = dayKey;
       }
 
@@ -983,8 +1147,8 @@ window.onerror = function(msg, src, line, col, err) {
       html += '</div>';
     }
 
-    if (!events.length) {
-      html = '<div class="cal-empty">No events this week</div>';
+    if (!filtered.length) {
+      html = '<div class="cal-empty">No upcoming events</div>';
     }
 
     document.getElementById('calendar-section').innerHTML = html;
@@ -997,6 +1161,39 @@ window.onerror = function(msg, src, line, col, err) {
   // detections across all cameras. Thumbnails served directly by Frigate.
 
   var detectionQueue = [];
+  var detSlots = [];  // persistent DOM references — never recreated
+
+  // Build detection strip DOM once; reuse elements on every poll
+  function initDetectionStrip() {
+    var el = document.getElementById('detection-strip');
+    el.innerHTML = '';
+    detSlots = [];
+    for (var i = 0; i < DETECT_SLOTS; i++) {
+      var wrap = document.createElement('div');
+      wrap.className = 'det';
+      var imgWrap = document.createElement('div');
+      imgWrap.className = 'det-img';
+      var img = document.createElement('img');
+      img.alt = '';
+      img.src = BLANK;
+      imgWrap.appendChild(img);
+      var info = document.createElement('div');
+      info.className = 'det-info';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'det-name';
+      nameSpan.style.opacity = '0.3';
+      nameSpan.textContent = 'No detection';
+      var timeSpan = document.createElement('span');
+      timeSpan.className = 'det-time';
+      info.appendChild(nameSpan);
+      info.appendChild(document.createTextNode(' '));
+      info.appendChild(timeSpan);
+      wrap.appendChild(imgWrap);
+      wrap.appendChild(info);
+      el.appendChild(wrap);
+      detSlots.push({ img: img, name: nameSpan, time: timeSpan, curId: null });
+    }
+  }
 
   function fetchDetections() {
     if (!FRIGATE_URL) return;
@@ -1018,7 +1215,7 @@ window.onerror = function(msg, src, line, col, err) {
             time: new Date(ev.start_time * 1000).toISOString()
           });
         }
-        renderDetectionStrip();
+        updateDetectionSlots();
       } catch (e) {
         dbg('detection parse error: ' + e.message);
       }
@@ -1027,39 +1224,36 @@ window.onerror = function(msg, src, line, col, err) {
     xhr.send();
   }
 
-  function renderDetectionStrip() {
-    var el = document.getElementById('detection-strip');
-
-    // Release old images before replacing
-    var oldImgs = el.querySelectorAll('img');
-    for (var k = 0; k < oldImgs.length; k++) oldImgs[k].src = BLANK;
-
-    var html = '';
+  // Update persistent DOM — only change src when event ID differs
+  function updateDetectionSlots() {
     for (var i = 0; i < DETECT_SLOTS; i++) {
-      html += '<div class="det">';
+      var slot = detSlots[i];
+      if (!slot) continue;
       if (i < detectionQueue.length) {
         var det = detectionQueue[i];
-        var thumbUrl = FRIGATE_URL + '/api/events/' + det.id + '/thumbnail.jpg';
-        html += '<div class="det-img">';
-        html += '<img src="' + thumbUrl + '" alt="">';
-        html += '</div>';
-        html += '<div class="det-info">';
-        html += '<span class="det-name">' + esc(det.camera) + '</span>';
-        html += ' <span class="det-time">' + fmtTime(det.time) + '</span>';
-        html += '</div>';
+        if (slot.curId !== det.id) {
+          slot.img.src = BLANK;  // release old bitmap first
+          slot.img.src = FRIGATE_URL + '/api/events/' + det.id + '/thumbnail.jpg?h=100';
+          slot.curId = det.id;
+        }
+        slot.name.textContent = det.camera;
+        slot.name.style.opacity = '0.85';
+        slot.time.textContent = fmtTime(det.time);
       } else {
-        html += '<div class="det-img"></div>';
-        html += '<div class="det-info"><span class="det-name" style="opacity:0.3">No detection</span></div>';
+        if (slot.curId !== null) {
+          slot.img.src = BLANK;
+          slot.curId = null;
+        }
+        slot.name.textContent = 'No detection';
+        slot.name.style.opacity = '0.3';
+        slot.time.textContent = '';
       }
-      html += '</div>';
     }
-    el.innerHTML = html;
   }
 
   function updateDetectionTimes() {
-    var infos = document.querySelectorAll('.det-time');
-    for (var i = 0; i < infos.length && i < detectionQueue.length; i++) {
-      infos[i].textContent = fmtTime(detectionQueue[i].time);
+    for (var i = 0; i < detSlots.length && i < detectionQueue.length; i++) {
+      detSlots[i].time.textContent = fmtTime(detectionQueue[i].time);
     }
   }
 
@@ -1071,10 +1265,12 @@ window.onerror = function(msg, src, line, col, err) {
 
   function startDashboardTimers() {
     stopDashboardTimers();
+    if (!detSlots.length) initDetectionStrip();
     syncCamera();
     refreshCamera();
     renderChips();
     renderWeather();
+    renderThermostat();
     fetchDetections();
     fetchCalendar();
 
@@ -1083,6 +1279,7 @@ window.onerror = function(msg, src, line, col, err) {
     dashTimers.push(camRefreshInterval, camSyncInterval);
     dashTimers.push(setInterval(renderChips, 30000));
     dashTimers.push(setInterval(renderWeather, WEATHER_MS));
+    dashTimers.push(setInterval(renderThermostat, 60000));
     dashTimers.push(setInterval(fetchDetections, DETECT_MS));
     dashTimers.push(setInterval(updateDetectionTimes, 60000));
     dashTimers.push(setInterval(fetchCalendar, CALENDAR_MS));
@@ -1094,6 +1291,11 @@ window.onerror = function(msg, src, line, col, err) {
     // Release camera images
     camImgA.src = BLANK;
     camImgB.src = BLANK;
+    // Release detection thumbnails
+    for (var i = 0; i < detSlots.length; i++) {
+      detSlots[i].img.src = BLANK;
+      detSlots[i].curId = null;
+    }
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1341,10 +1543,7 @@ window.onerror = function(msg, src, line, col, err) {
 
   function init() {
     dbg('init() — showing dashboard');
-    // Keep debug overlay visible in debug mode (no auto-hide)
     showDashboard();
-
-    // Screensaver photos served by photoframe-server (no pre-loading needed)
   }
 
   // Catch all unhandled errors visibly

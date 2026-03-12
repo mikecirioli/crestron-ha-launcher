@@ -51,6 +51,9 @@ window.PANEL_CONFIG = {
     { entity: 'switch.smart_plug_2',              icon: '\uD83D\uDC1F', name: 'Pond' }
   ],
 
+  // ── Thermostat ─────────────────────────────────────────────
+  THERMOSTAT_ENTITY: 'climate.upper_level',  // leave empty to hide
+
   // ── Other Entities ─────────────────────────────────────────
   WEATHER_ENTITY:  'weather.forecast_home',
   CAMERA_SELECTOR: 'input_select.camera_selector',
