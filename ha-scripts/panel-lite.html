@@ -683,7 +683,7 @@ window.onerror = function(msg, src, line, col, err) {
         function(msg) {
           if (msg && msg.forecast) {
             forecastData = msg.forecast;
-            renderWeather();
+            if (!isScreensaver) renderWeather();
             renderSSWeather();
           }
         },
@@ -696,7 +696,7 @@ window.onerror = function(msg, src, line, col, err) {
         function(msg) {
           if (msg && msg.forecast) {
             hourlyData = msg.forecast;
-            renderWeather();
+            if (!isScreensaver) renderWeather();
           }
         },
         true // subscription
