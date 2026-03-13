@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crestron Screensaver</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    color: #e1e1e1;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .ss-layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    -webkit-transition: opacity 1.5s ease-in-out;
+    transition: opacity 1.5s ease-in-out;
+  }
+  .ss-layer.visible { opacity: 1; }
+
+  .ss-overlay {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    padding: 16px 24px;
+    border-radius: 14px;
+    z-index: 110;
+    text-align: right;
+  }
+  .ss-clock {
+    font-size: 36px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    line-height: 1.1;
+  }
+  .ss-date {
+    font-size: 14px;
+    font-weight: 400;
+    opacity: 0.8;
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+
+  <img id="ss-photo-a" class="ss-layer" alt="">
+  <img id="ss-photo-b" class="ss-layer" alt="">
+  <div class="ss-overlay" id="ss-overlay">
+    <div class="ss-clock" id="ss-clock"></div>
+    <div class="ss-date" id="ss-date"></div>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  var PHOTOFRAME_URL = 'http://192.168.1.245:8099';
+  var PHOTO_MS       = 30000;
+
+  // 1x1 transparent GIF — forces Chromium 95 to free decoded bitmap
+  var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+
+  var ssPhotoA = document.getElementById('ss-photo-a');
+  var ssPhotoB = document.getElementById('ss-photo-b');
+  var ssOverlay = document.getElementById('ss-overlay');
+  var ssFront = 'a';
+  var loadTimer = null;
+
+  // ── Photo slideshow ──────────────────────────────────────
+  // Single-chain scheduling: only one load in flight at a time.
+  // No setInterval — each cycle schedules the next via setTimeout
+  // after completing (success, error, or timeout).
+
+  var cleanupTimer = null;
+
+  function showNextPhoto() {
+    clearTimeout(loadTimer);
+    clearTimeout(cleanupTimer);
+
+    var back  = (ssFront === 'a') ? ssPhotoB : ssPhotoA;
+    var front = (ssFront === 'a') ? ssPhotoA : ssPhotoB;
+    // Capture references before ssFront swap for safe cleanup
+    var oldFront = front;
+
+    back.onload = function() {
+      clearTimeout(loadTimer);
+      back.onload = null;
+      back.onerror = null;
+      back.classList.add('visible');
+      cleanupTimer = setTimeout(function() {
+        oldFront.classList.remove('visible');
+        oldFront.onload = null;
+        oldFront.onerror = null;
+        oldFront.src = BLANK;
+      }, 1600);
+      ssFront = (ssFront === 'a') ? 'b' : 'a';
+      // Schedule next photo after this one completes
+      loadTimer = setTimeout(showNextPhoto, PHOTO_MS);
+    };
+
+    back.onerror = function() {
+      clearTimeout(loadTimer);
+      back.onload = null;
+      back.onerror = null;
+      back.src = BLANK;
+      loadTimer = setTimeout(showNextPhoto, 5000);
+    };
+
+    // Timeout guard: if image doesn't load in 8s, skip it
+    loadTimer = setTimeout(function() {
+      back.onload = null;
+      back.onerror = null;
+      back.src = BLANK;
+      loadTimer = setTimeout(showNextPhoto, 5000);
+    }, 8000);
+
+    back.src = PHOTOFRAME_URL + '/random?w=1280&h=800&t=' + Date.now();
+  }
+
+  // ── Clock overlay ────────────────────────────────────────
+
+  function renderClock() {
+    var now = new Date();
+    document.getElementById('ss-clock').textContent =
+      now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    document.getElementById('ss-date').textContent =
+      now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  // ── Anti-burn-in bounce (~1px/sec) ───────────────────────
+
+  var bx = 40, by = 40, dx = 1, dy = 0.7;
+
+  function bounce() {
+    var ow = ssOverlay.offsetWidth || 200;
+    var oh = ssOverlay.offsetHeight || 80;
+    var maxX = window.innerWidth - ow - 20;
+    var maxY = window.innerHeight - oh - 20;
+    bx += dx; by += dy;
+    if (bx <= 20 || bx >= maxX) dx = -dx;
+    if (by <= 20 || by >= maxY) dy = -dy;
+    bx = Math.max(20, Math.min(bx, maxX));
+    by = Math.max(20, Math.min(by, maxY));
+    ssOverlay.style.left = bx + 'px';
+    ssOverlay.style.top  = by + 'px';
+  }
+
+  // ── Start ────────────────────────────────────────────────
+
+  renderClock();
+  showNextPhoto();  // self-scheduling chain — no setInterval needed
+  setInterval(renderClock, 30000);
+  setInterval(bounce, 1000);
+
+})();
+</script>
+</body>
+</html>
