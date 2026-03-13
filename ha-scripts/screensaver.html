@@ -28,12 +28,14 @@
 
   .ss-overlay {
     position: fixed;
+    top: 0; left: 0;
     background: rgba(0, 0, 0, 0.35);
     color: #fff;
     padding: 16px 24px;
     border-radius: 14px;
     z-index: 110;
     text-align: right;
+    will-change: transform;
   }
   .ss-clock {
     font-size: 36px;
@@ -84,10 +86,12 @@
   // 1x1 transparent GIF — forces Chromium 95 to free decoded bitmap
   var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 
-  var ssPhotoA = document.getElementById('ss-photo-a');
-  var ssPhotoB = document.getElementById('ss-photo-b');
+  var ssPhotoA  = document.getElementById('ss-photo-a');
+  var ssPhotoB  = document.getElementById('ss-photo-b');
   var ssOverlay = document.getElementById('ss-overlay');
-  var ssFront = 'a';
+  var elClock   = document.getElementById('ss-clock');
+  var elDate    = document.getElementById('ss-date');
+  var ssFront   = 'a';
   var loadTimer = null;
 
   // ── Photo slideshow ──────────────────────────────────────
@@ -118,7 +122,6 @@
         oldFront.src = BLANK;
       }, 1600);
       ssFront = (ssFront === 'a') ? 'b' : 'a';
-      // Schedule next photo after this one completes
       loadTimer = setTimeout(showNextPhoto, PHOTO_MS);
     };
 
@@ -145,15 +148,19 @@
 
   function renderClock() {
     var now = new Date();
-    document.getElementById('ss-clock').textContent =
+    elClock.textContent =
       now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    document.getElementById('ss-date').textContent =
+    elDate.textContent =
       now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    setTimeout(renderClock, 30000);
   }
 
   // ── Data chips (plain text from photoframe-server) ──────
+  // Self-scheduling setTimeout chain — no setInterval.
+  // Abort in-flight XHRs before starting new ones to prevent overlap.
 
   var DATA_MS = 120000;  // refresh every 2 min
+  var activeXHRs = [];
 
   var chips = [
     { id: 'chip-weather',    path: '/ha/weather' },
@@ -161,52 +168,74 @@
     { id: 'chip-thermostat', path: '/ha/thermostat' }
   ];
 
+  // Cache chip DOM elements once
+  var chipEls = {};
+  for (var c = 0; c < chips.length; c++) {
+    chipEls[chips[c].id] = document.getElementById(chips[c].id);
+  }
+
   function fetchChip(chip) {
     var xhr = new XMLHttpRequest();
+    activeXHRs.push(xhr);
     xhr.open('GET', PHOTOFRAME_URL + chip.path + '?t=' + Date.now());
     xhr.timeout = 8000;
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        var el = document.getElementById(chip.id);
+    xhr.onload = xhr.onerror = xhr.ontimeout = function() {
+      if (xhr.status === 200 && xhr.responseText != null) {
+        var el = chipEls[chip.id];
         el.textContent = xhr.responseText;
         el.style.display = xhr.responseText ? '' : 'none';
       }
+      // Null all handlers to help GC
+      xhr.onload = null;
+      xhr.onerror = null;
+      xhr.ontimeout = null;
     };
-    xhr.onerror = function() {};
-    xhr.ontimeout = function() {};
     xhr.send();
   }
 
   function fetchAllChips() {
+    // Abort any still-pending XHRs from previous cycle
+    for (var a = 0; a < activeXHRs.length; a++) {
+      try { activeXHRs[a].abort(); } catch(e) {}
+    }
+    activeXHRs = [];
     for (var i = 0; i < chips.length; i++) fetchChip(chips[i]);
+    setTimeout(fetchAllChips, DATA_MS);
   }
 
-  // ── Anti-burn-in bounce (~1px/sec) ───────────────────────
+  // ── Anti-burn-in bounce ────────────────────────────────
+  // Uses transform instead of left/top to avoid layout reflow.
+  // Caches overlay dimensions, re-measured only when chips update.
 
   var bx = 40, by = 40, dx = 1, dy = 0.7;
+  var cachedOW = 200, cachedOH = 80;
+
+  function measureOverlay() {
+    cachedOW = ssOverlay.offsetWidth || 200;
+    cachedOH = ssOverlay.offsetHeight || 80;
+    setTimeout(measureOverlay, 10000);
+  }
 
   function bounce() {
-    var ow = ssOverlay.offsetWidth || 200;
-    var oh = ssOverlay.offsetHeight || 80;
-    var maxX = window.innerWidth - ow - 20;
-    var maxY = window.innerHeight - oh - 20;
+    var maxX = window.innerWidth - cachedOW - 20;
+    var maxY = window.innerHeight - cachedOH - 20;
     bx += dx; by += dy;
     if (bx <= 20 || bx >= maxX) dx = -dx;
     if (by <= 20 || by >= maxY) dy = -dy;
     bx = Math.max(20, Math.min(bx, maxX));
     by = Math.max(20, Math.min(by, maxY));
-    ssOverlay.style.left = bx + 'px';
-    ssOverlay.style.top  = by + 'px';
+    ssOverlay.style.cssText = '-webkit-transform:translate(' + bx + 'px,' + by + 'px);transform:translate(' + bx + 'px,' + by + 'px)';
+    setTimeout(bounce, 1000);
   }
 
   // ── Start ────────────────────────────────────────────────
+  // All recurring work uses self-scheduling setTimeout — zero setInterval.
 
+  measureOverlay();
   renderClock();
   fetchAllChips();
-  showNextPhoto();  // self-scheduling chain — no setInterval needed
-  setInterval(renderClock, 30000);
-  setInterval(fetchAllChips, DATA_MS);
-  setInterval(bounce, 1000);
+  showNextPhoto();
+  bounce();
 
 })();
 </script>
