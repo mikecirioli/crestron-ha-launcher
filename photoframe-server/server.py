@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
 Minimal HTTP server that serves random photos from a directory,
-with optional Frigate API proxy for detection thumbnails.
+with optional Frigate API proxy and HA state endpoints.
 
 Endpoints:
   /              HTML page — full-screen photo frame with auto-refresh and clock overlay
   /random        Returns a random image file (JPEG/PNG/WebP) with proper content-type
   /random?w=1280&h=800  Resize on the fly (requires Pillow)
   /frigate/*     Proxy to Frigate API (requires FRIGATE_URL env var, adds CORS headers)
+  /ha/weather    Plain text: current weather summary
+  /ha/forecast   Plain text: 3-day forecast
+  /ha/event      Plain text: next calendar event
+  /ha/thermostat Plain text: thermostat status
   /health        Health check
 
 Environment variables:
@@ -16,6 +20,8 @@ Environment variables:
   REFRESH        Seconds between photo changes on the HTML page (default: 30)
   TITLE          Page title / overlay text (default: empty)
   FRIGATE_URL    Frigate base URL for proxy (e.g. http://192.168.1.207:5000)
+  HA_URL         Home Assistant URL (e.g. http://192.168.1.245:8123)
+  HA_TOKEN       Long-lived access token for HA REST API
 
 Usage:
   python3 server.py
@@ -41,6 +47,8 @@ PORT = int(os.environ.get("PORT", "8099"))
 REFRESH = int(os.environ.get("REFRESH", "30"))
 TITLE = os.environ.get("TITLE", "")
 FRIGATE_URL = os.environ.get("FRIGATE_URL", "")  # e.g. http://192.168.1.207:5000
+HA_URL = os.environ.get("HA_URL", "").rstrip("/")
+HA_TOKEN = os.environ.get("HA_TOKEN", "")
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 
 # Cache the file list, refresh periodically
@@ -80,6 +88,211 @@ def resize_image(path, max_w, max_h):
     except ImportError:
         # No Pillow — serve original
         return None, None
+
+
+
+# ── HA data cache ─────────────────────────────────────────────
+# Server-side caching: fetch from HA at most once per interval,
+# serve plain text to clients with zero processing on their end.
+
+import json
+import time
+import threading
+
+_ha_cache = {}       # key → {"text": str, "ts": float}
+_ha_cache_ttl = 120  # seconds
+_ha_lock = threading.Lock()
+
+
+def _ha_get(path):
+    """GET from HA REST API. Returns parsed JSON or None."""
+    if not HA_URL or not HA_TOKEN:
+        return None
+    url = HA_URL + path
+    req = Request(url)
+    req.add_header("Authorization", "Bearer " + HA_TOKEN)
+    req.add_header("Content-Type", "application/json")
+    try:
+        resp = urlopen(req, timeout=10)
+        return json.loads(resp.read())
+    except Exception:
+        return None
+
+
+def _ha_post(path, body, return_response=False):
+    """POST to HA REST API. Returns parsed JSON or None."""
+    if not HA_URL or not HA_TOKEN:
+        return None
+    url = HA_URL + path
+    if return_response:
+        url += "?return_response"
+    data = json.dumps(body).encode()
+    req = Request(url, data=data, method="POST")
+    req.add_header("Authorization", "Bearer " + HA_TOKEN)
+    req.add_header("Content-Type", "application/json")
+    try:
+        resp = urlopen(req, timeout=10)
+        return json.loads(resp.read())
+    except Exception:
+        return None
+
+
+def _cached(key, fetch_fn):
+    """Return cached text or call fetch_fn to refresh."""
+    with _ha_lock:
+        entry = _ha_cache.get(key)
+        if entry and (time.time() - entry["ts"]) < _ha_cache_ttl:
+            return entry["text"]
+    text = fetch_fn() or ""
+    with _ha_lock:
+        _ha_cache[key] = {"text": text, "ts": time.time()}
+    return text
+
+
+def ha_weather():
+    def fetch():
+        data = _ha_get("/api/states/weather.forecast_home")
+        if not data:
+            return ""
+        a = data.get("attributes", {})
+        temp = a.get("temperature")
+        unit = a.get("temperature_unit", "\u00b0F")
+        cond = (data.get("state", "") or "").replace("-", " ").replace("_", " ").title()
+        humid = a.get("humidity")
+        parts = []
+        if temp is not None:
+            parts.append("{}{}".format(round(temp), unit))
+        if cond:
+            parts.append(cond)
+        if humid is not None:
+            parts.append("{}% humidity".format(humid))
+        return "  \u00b7  ".join(parts)
+    return _cached("weather", fetch)
+
+
+def ha_forecast():
+    def fetch():
+        data = _ha_post("/api/services/weather/get_forecasts", {
+            "type": "daily",
+            "entity_id": "weather.forecast_home"
+        }, return_response=True)
+        if not data:
+            return ""
+        forecasts = []
+        resp = data.get("service_response", data.get("response", data))
+        for v in (resp.values() if isinstance(resp, dict) else []):
+            if isinstance(v, dict) and "forecast" in v:
+                forecasts = v["forecast"]
+                break
+        if not forecasts:
+            return ""
+        days = forecasts[:3]
+        parts = []
+        day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        for d in days:
+            dt = d.get("datetime", "")
+            try:
+                from datetime import datetime
+                dn = day_names[datetime.fromisoformat(dt.replace("Z", "+00:00")).weekday()]
+            except Exception:
+                dn = "?"
+            hi = round(d.get("temperature", 0))
+            lo = round(d.get("templow", 0))
+            parts.append("{} {}/{}".format(dn, hi, lo))
+        return "  \u00b7  ".join(parts)
+    return _cached("forecast", fetch)
+
+
+def ha_thermostat():
+    def fetch():
+        data = _ha_get("/api/states/climate.upper_level")
+        if not data:
+            return ""
+        a = data.get("attributes", {})
+        current = a.get("current_temperature")
+        action = a.get("hvac_action", data.get("state", ""))
+        target = a.get("temperature")
+        if target is None:
+            hi = a.get("target_temp_high")
+            lo = a.get("target_temp_low")
+            if hi is not None and lo is not None:
+                target = "{}-{}".format(round(lo), round(hi))
+        else:
+            target = str(round(target))
+        parts = []
+        if current is not None:
+            parts.append("{}\u00b0".format(round(current)))
+        if action:
+            parts.append(action.replace("_", " ").title())
+        if target and data.get("state") != "off":
+            parts.append("Set: {}\u00b0".format(target))
+        return "  \u00b7  ".join(parts)
+    return _cached("thermostat", fetch)
+
+
+def ha_next_event():
+    def fetch():
+        if not HA_URL or not HA_TOKEN:
+            return ""
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        calendars = [
+            "calendar.home",
+            "calendar.mikecirioli_gmail_com",
+            "calendar.birthdays",
+            "calendar.mcirioli_cloudbees_com",
+        ]
+        best = None
+        best_start = None
+        for cal in calendars:
+            # Check if calendar is available first
+            state = _ha_get("/api/states/" + cal)
+            if not state or state.get("state") == "unavailable":
+                continue
+            data = _ha_post("/api/services/calendar/get_events", {
+                "entity_id": cal,
+                "duration": {"days": 7}
+            }, return_response=True)
+            if not data:
+                continue
+            resp = data.get("service_response", data.get("response", data))
+            events = []
+            for v in (resp.values() if isinstance(resp, dict) else []):
+                if isinstance(v, dict) and "events" in v:
+                    events = v["events"]
+                    break
+            for ev in events:
+                st = ev.get("start")
+                if not st:
+                    continue
+                try:
+                    if "T" in st:
+                        evt_dt = datetime.fromisoformat(st.replace("Z", "+00:00"))
+                    else:
+                        evt_dt = datetime.fromisoformat(st + "T00:00:00+00:00")
+                except Exception:
+                    continue
+                if evt_dt < now:
+                    continue
+                if best_start is None or evt_dt < best_start:
+                    best_start = evt_dt
+                    best = ev
+        if not best:
+            return ""
+        title = best.get("summary", best.get("title", ""))
+        diff = best_start - now
+        total_min = int(diff.total_seconds() / 60)
+        if total_min < 60:
+            prefix = "In {}min".format(total_min)
+        elif total_min < 1440:
+            h = total_min // 60
+            m = total_min % 60
+            prefix = "In {}h{}".format(h, " {}m".format(m) if m else "")
+        else:
+            day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            prefix = day_names[best_start.weekday()]
+        return "{}  \u00b7  {}".format(prefix, title)
+    return _cached("event", fetch)
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -243,6 +456,8 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_random(parsed)
         elif path.startswith("/frigate") and FRIGATE_URL:
             self.proxy_frigate(parsed)
+        elif path.startswith("/ha/"):
+            self.serve_ha(path)
         elif path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -250,6 +465,31 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok")
         else:
             self.send_error(404)
+
+    def serve_ha(self, path):
+        """Serve pre-formatted HA data as plain text."""
+        handlers = {
+            "/ha/weather": ha_weather,
+            "/ha/forecast": ha_forecast,
+            "/ha/thermostat": ha_thermostat,
+            "/ha/event": ha_next_event,
+        }
+        fn = handlers.get(path)
+        if not fn:
+            self.send_error(404)
+            return
+        if not HA_URL or not HA_TOKEN:
+            self.send_error(503, "HA_URL/HA_TOKEN not configured")
+            return
+        text = fn()
+        data = text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def proxy_frigate(self, parsed):
         """Proxy requests to Frigate API. /frigate/foo → FRIGATE_URL/foo"""

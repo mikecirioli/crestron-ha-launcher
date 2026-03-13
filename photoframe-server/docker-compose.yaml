@@ -11,6 +11,8 @@ services:
       - REFRESH=30        # seconds between photos on the HTML page
       - TITLE=            # optional overlay text
       - FRIGATE_URL=      # optional: Frigate base URL for detection proxy (e.g. http://192.168.1.207:5000)
+      - HA_URL=           # optional: Home Assistant URL (e.g. http://192.168.1.245:8123)
+      - HA_TOKEN=         # optional: HA long-lived access token for /ha/* endpoints
     # For Crestron EMS mode, point the panel at:
     #   http://<host-ip>:8099/
     #

@@ -47,6 +47,17 @@
     opacity: 0.8;
     margin-top: 2px;
   }
+  .ss-chips {
+    margin-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding-top: 8px;
+  }
+  .ss-chip {
+    font-size: 21px;
+    font-weight: 400;
+    color: #ffb74d;
+    line-height: 1.5;
+  }
 </style>
 </head>
 <body>
@@ -56,6 +67,11 @@
   <div class="ss-overlay" id="ss-overlay">
     <div class="ss-clock" id="ss-clock"></div>
     <div class="ss-date" id="ss-date"></div>
+    <div class="ss-chips" id="ss-chips">
+      <div class="ss-chip" id="chip-weather"></div>
+      <div class="ss-chip" id="chip-event"></div>
+      <div class="ss-chip" id="chip-thermostat"></div>
+    </div>
   </div>
 
 <script>
@@ -135,6 +151,36 @@
       now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   }
 
+  // ── Data chips (plain text from photoframe-server) ──────
+
+  var DATA_MS = 120000;  // refresh every 2 min
+
+  var chips = [
+    { id: 'chip-weather',    path: '/ha/weather' },
+    { id: 'chip-event',      path: '/ha/event' },
+    { id: 'chip-thermostat', path: '/ha/thermostat' }
+  ];
+
+  function fetchChip(chip) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', PHOTOFRAME_URL + chip.path + '?t=' + Date.now());
+    xhr.timeout = 8000;
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        var el = document.getElementById(chip.id);
+        el.textContent = xhr.responseText;
+        el.style.display = xhr.responseText ? '' : 'none';
+      }
+    };
+    xhr.onerror = function() {};
+    xhr.ontimeout = function() {};
+    xhr.send();
+  }
+
+  function fetchAllChips() {
+    for (var i = 0; i < chips.length; i++) fetchChip(chips[i]);
+  }
+
   // ── Anti-burn-in bounce (~1px/sec) ───────────────────────
 
   var bx = 40, by = 40, dx = 1, dy = 0.7;
@@ -156,8 +202,10 @@
   // ── Start ────────────────────────────────────────────────
 
   renderClock();
+  fetchAllChips();
   showNextPhoto();  // self-scheduling chain — no setInterval needed
   setInterval(renderClock, 30000);
+  setInterval(fetchAllChips, DATA_MS);
   setInterval(bounce, 1000);
 
 })();
