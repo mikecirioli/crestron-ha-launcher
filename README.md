@@ -455,6 +455,53 @@ RAMFREE: ~800 MB free
 TASKSTAT: chromium.chrome at 0:03, no CrashpadMain process
 ```
 
+## Screensaver Stability Safeguards
+
+The standalone screensaver (`ha-scripts/screensaver.html`, deployed as `panel-lite.html`) is designed for multi-day unattended operation on the TSW-1060's constrained Chromium 95 WebView. Every design decision prioritizes memory safety over features.
+
+### Photo Loading
+
+| Safeguard | Why |
+|-----------|-----|
+| **Self-scheduling `setTimeout` chain** | Only one image load is ever in flight. Each cycle schedules the next only after completing (success, error, or timeout). `setInterval` fires on a fixed clock regardless of completion — on slow ARM hardware this stacks up overlapping loads that leak decoded bitmaps. |
+| **8-second timeout guard** | If an image doesn't load in 8s, the load is abandoned — handlers are nulled and `src` is set to BLANK. Prevents hung connections from blocking the chain. |
+| **Handler cleanup on all code paths** | `onload`, `onerror`, and the timeout guard all null both handlers and set `src` to the 1x1 data URI. No code path leaves a handler attached or a decoded bitmap in memory. |
+| **`oldFront` capture before swap** | The crossfade cleanup callback captures a reference to the current front element before `ssFront` is swapped. Without this, the closure would clean up the wrong element. |
+| **1x1 data URI for bitmap release** | Chromium 95 does not free decoded image bitmaps when `img.src = ''` — you must assign a tiny valid image. The BLANK constant is a 1x1 transparent GIF. |
+| **1.6s cleanup delay** | The old image is blanked 1.6s after the new one fades in, allowing the CSS transition to complete before the bitmap is released. |
+
+### XHR Data Chips
+
+| Safeguard | Why |
+|-----------|-----|
+| **Self-scheduling `setTimeout` chain** | Chip fetches run on a 2-minute self-scheduling chain, not `setInterval`. Same overlap-prevention rationale as photos. |
+| **`abort()` before re-fetch** | All in-flight XHRs from the previous cycle are aborted before starting new ones. Prevents duplicate requests if the server is slow. |
+| **Handler cleanup after completion** | `onload`, `onerror`, and `ontimeout` are all nulled after firing, regardless of HTTP status. Helps GC on Chromium 95. |
+| **8-second XHR timeout** | Prevents hung connections from accumulating. |
+| **`textContent` only** | No `innerHTML`, no DOM node creation or destruction. Just plain text assignment to pre-existing elements. |
+
+### Bounce Animation
+
+| Safeguard | Why |
+|-----------|-----|
+| **CSS `transform: translate()` instead of `left`/`top`** | Transform is GPU-composited and does not trigger layout reflow. The old approach (`style.left`/`style.top`) forced 86,400 reflows per day. |
+| **`will-change: transform`** | Hints the compositor to promote the overlay to its own layer, avoiding repaints of the photo layers underneath. |
+| **Cached overlay dimensions** | `offsetWidth`/`offsetHeight` (which force layout reflow) are measured on a separate 10-second timer, not every bounce tick. |
+| **Self-scheduling `setTimeout`** | Even the 1-second bounce tick uses `setTimeout`, not `setInterval`. |
+
+### General Architecture
+
+| Safeguard | Why |
+|-----------|-----|
+| **Zero `setInterval` in the entire file** | Every recurring operation uses self-scheduling `setTimeout`. This is the single most important stability pattern for this hardware. |
+| **All DOM elements cached at init** | No `getElementById` in any recurring function. Element references are stored in variables at startup. |
+| **No WebSocket** | All data comes via simple XHR to the photoframe-server, which caches HA data server-side. No persistent connection to leak or reconnect. |
+| **No JSON parsing** | Photoframe-server returns pre-formatted plain text. The panel just assigns `textContent`. |
+| **No `innerHTML`** | No DOM node creation or removal at runtime. The entire DOM is 2 `<img>` elements + 1 overlay div with 5 child divs. |
+| **No error recovery / reload logic** | If something truly breaks, a frozen screen is safer than a crash-loop. The panel's `MEMLOWTRIG` / `PERIODICREBOOT` settings handle hard recovery. |
+| **No `console.log`** | Avoids any logging overhead on the constrained device. |
+| **IIFE with `'use strict'`** | Prevents accidental globals and catches silent errors. |
+
 ## Side Buttons
 
 With `APPKEYS ON`, the TSW-1060's five hardware side buttons fire standard JavaScript key events directly in the browser. No Node-RED or external tools needed.
