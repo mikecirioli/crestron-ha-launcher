@@ -33,6 +33,7 @@ import sys
 import random
 import mimetypes
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
 from io import BytesIO
 
@@ -569,7 +570,10 @@ if __name__ == "__main__":
     if not photos:
         print(f"WARNING: no images found in {PHOTO_DIR}", file=sys.stderr)
 
-    server = HTTPServer(("0.0.0.0", PORT), PhotoHandler)
+    class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), PhotoHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
