@@ -414,7 +414,9 @@ All dashboard versions require:
 
 ### WebView Stability
 
-The TSW-1060 runs Chromium 95 on Android 5.1 with ~1.7GB RAM and a 4-core ARM SoC. The WebView is severely resource-constrained and will crash-loop if overloaded. The following constraints were discovered through extensive soak testing (6+ hour runs with `TASKSTAT` monitoring).
+> **Note:** These constraints apply to the **CH5 WebView**. Standalone Chromium (via `BROWSEROPEN`) is significantly more stable — see [Lessons Learned](#lessons-learned) below.
+
+The TSW-1060 runs Chromium 95 on Android 5.1 with ~1.7GB RAM and a 4-core ARM SoC. The CH5 WebView shares memory with the CrashpadMain and CH5 runtime processes, making it severely resource-constrained. It will crash-loop if overloaded. The following constraints were discovered through extensive soak testing (6+ hour runs with `TASKSTAT` monitoring).
 
 **Hard constraints:**
 
@@ -457,7 +459,9 @@ TASKSTAT: chromium.chrome at 0:03, no CrashpadMain process
 
 ## Screensaver Stability Safeguards
 
-The standalone screensaver (`ha-scripts/screensaver.html`, deployed as `panel-lite.html`) is designed for multi-day unattended operation on the TSW-1060's constrained Chromium 95 WebView. Every design decision prioritizes memory safety over features.
+> **Note:** These safeguards were developed for the CH5 WebView. On standalone Chromium they are optional — standard browser patterns work correctly. See [Lessons Learned](#lessons-learned).
+
+The standalone screensaver (`ha-scripts/screensaver.html`) is designed for multi-day unattended operation on the TSW-1060's constrained Chromium 95 WebView. Every design decision prioritizes memory safety over features.
 
 ### Photo Loading
 
@@ -670,6 +674,31 @@ Panel polls photoframe :8099/random (screensaver)        ▼
 - Verify `input_select.camera_selector` exists (**Settings > Helpers**)
 - Verify the cycling automation is enabled (**Settings > Automations**)
 - Check that the dashboard YAML has conditional cards matching the input_select states
+
+## Lessons Learned
+
+### Chromium vs CH5 WebView — The Single Biggest Win
+
+The TSW-1060 has two ways to display a URL: the **CH5 WebView** (launched implicitly by the CH5 runtime) and the **standalone Chromium browser** (launched via `BROWSEROPEN http://...`). After weeks of soak testing, chasing memory leaks, and building elaborate workarounds, the single most impactful discovery was:
+
+**The CH5 WebView was the root cause of instability, not our code.**
+
+The CH5 WebView shares memory with the CrashpadMain and CH5 runtime processes. Under sustained load (cameras, calendars, WebSocket subscriptions), the combined memory pressure causes crash-loops — even with minimal JS and no framework. Switching to standalone Chromium (`BROWSEROPEN` to the Chromium app) eliminated crashes entirely. The same dashboard code that crashed within hours on the WebView runs for days on Chromium without intervention.
+
+If you're building any long-running web app on a Crestron panel: **use Chromium, not the CH5 WebView.**
+
+### Stability Workarounds — Needed for WebView, Optional on Chromium
+
+The screensaver stability safeguards documented below (setTimeout chains, XHR abort patterns, GPU compositing, handler nulling, etc.) were all developed to work around CH5 WebView limitations. On standalone Chromium, standard browser patterns (`setInterval`, CSS transitions, normal GC) work correctly. The workarounds don't hurt on Chromium, but they add complexity that may not be justified if you're targeting Chromium from the start.
+
+### Other Findings
+
+| Finding | Detail |
+|---------|--------|
+| **`img.decode()` is harmful on ARM** | Causes a double-decode on the ARM GPU, making image swap flicker *worse*. Don't use it on TSW-1060. |
+| **CSS opacity transitions cause resize flash** | On Chromium 95/ARM, crossfading camera snapshots with `transition: opacity 0.3s` briefly shows the image at intrinsic dimensions before `object-fit: cover` applies. Instant swap (no transition) eliminates this. |
+| **Single-threaded HTTP servers drop concurrent requests** | Python's `HTTPServer` has a TCP backlog of 5 and processes one request at a time. If the browser fires 7+ `img.src` assignments simultaneously, connections beyond the backlog are refused. Use `ThreadingMixIn`. |
+| **Crestron panel aggressively caches** | The WebView/Chromium browser caches JS and HTML files. After deploying changes, reboot the panel to ensure the fresh version loads. |
 
 ## Future Ideas
 
