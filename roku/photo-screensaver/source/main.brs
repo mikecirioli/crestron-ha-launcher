@@ -1,4 +1,4 @@
-sub Main()
+sub RunScreenSaver()
     screen = CreateObject("roSGScreen")
     port = CreateObject("roMessagePort")
     screen.setMessagePort(port)
@@ -11,4 +11,9 @@ sub Main()
             if msg.isScreenClosed() then return
         end if
     end while
+end sub
+
+sub Main()
+    ' Launched as a channel — just run the screensaver
+    RunScreenSaver()
 end sub
