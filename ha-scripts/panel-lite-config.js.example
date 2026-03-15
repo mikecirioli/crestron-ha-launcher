@@ -62,6 +62,9 @@ window.PANEL_CONFIG = {
   WEATHER_ENTITY:  'weather.forecast_home',
   CAMERA_SELECTOR: 'input_select.camera_selector',
 
+  // ── Photo Display ──────────────────────────────────────────
+  PHOTO_FIT: 'contain',       // 'contain' = fit with black bars (default), 'cover' = fill and crop
+
   // ── Timing (ms) ────────────────────────────────────────────
   CAM_REFRESH_MS:  3000,
   CAM_SYNC_MS:     1500,

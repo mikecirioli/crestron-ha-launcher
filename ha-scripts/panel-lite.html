@@ -327,7 +327,7 @@
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     opacity: 0;
     transition: opacity 1.5s ease-in-out;
   }
@@ -480,6 +480,7 @@ window.onerror = function(msg, src, line, col, err) {
   var WS_RECONNECT_MS   = C.WS_RECONNECT_MS || 5000;
   var WATCH_REFRESH_MS  = C.WATCH_REFRESH_MS || 2000;
   var WATCH_TIMEOUT_MS  = C.WATCH_TIMEOUT_MS || 300000; // 5 min
+  var PHOTO_FIT         = C.PHOTO_FIT || 'contain';  // 'contain' (fit) or 'cover' (fill/crop)
 
   // 1x1 transparent GIF — forces Chromium 95 to actually free decoded bitmap
   // (img.src = '' does NOT release GPU memory in this WebView version)
@@ -556,6 +557,10 @@ window.onerror = function(msg, src, line, col, err) {
   var ssPhotoB = document.getElementById('ss-photo-b');
   var ssFront = 'a';
   var ssOverlay = document.getElementById('ss-overlay');
+
+  // Apply configurable photo fit mode to screensaver layers
+  ssPhotoA.style.objectFit = PHOTO_FIT;
+  ssPhotoB.style.objectFit = PHOTO_FIT;
 
   // ══════════════════════════════════════════════════════════
   // WEBSOCKET CONNECTION

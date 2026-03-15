@@ -19,7 +19,7 @@
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     opacity: 0;
     -webkit-transition: opacity 1.5s ease-in-out;
     transition: opacity 1.5s ease-in-out;
@@ -80,8 +80,12 @@
 (function() {
   'use strict';
 
-  var PHOTOFRAME_URL = 'http://192.168.1.245:8099';
-  var PHOTO_MS       = 30000;
+  // Configuration via URL hash: #server=http://host:8099&fit=cover&interval=30
+  var hash = {};
+  location.hash.replace(/[#&]([^=]+)=([^&]*)/g, function(_, k, v) { hash[k] = decodeURIComponent(v); });
+  var PHOTOFRAME_URL = hash.server || 'http://192.168.1.245:8099';
+  var PHOTO_MS       = (parseInt(hash.interval) || 30) * 1000;
+  var PHOTO_FIT      = hash.fit || 'contain';  // 'contain' (fit, black bars) or 'cover' (fill, crop)
 
   // 1x1 transparent GIF — forces Chromium 95 to free decoded bitmap
   var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
@@ -93,6 +97,10 @@
   var elDate    = document.getElementById('ss-date');
   var ssFront   = 'a';
   var loadTimer = null;
+
+  // Apply photo fit mode
+  ssPhotoA.style.objectFit = PHOTO_FIT;
+  ssPhotoB.style.objectFit = PHOTO_FIT;
 
   // ── Photo slideshow ──────────────────────────────────────
   // Single-chain scheduling: only one load in flight at a time.

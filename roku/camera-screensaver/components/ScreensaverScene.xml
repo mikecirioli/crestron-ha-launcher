@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="ScreensaverScene" extends="Scene">
+  <children>
+    <!-- Black background -->
+    <Rectangle id="bg" width="1920" height="1080" color="#000000" />
+
+    <!-- Double-buffered camera snapshot layers -->
+    <Poster id="photoA" width="1920" height="1080"
+            translation="[0,0]" loadDisplayMode="scaleToFit" opacity="0.0" />
+    <Poster id="photoB" width="1920" height="1080"
+            translation="[0,0]" loadDisplayMode="scaleToFit" opacity="0.0" />
+
+    <!-- Camera name label (top-left) -->
+    <Rectangle id="camLabelBg" width="300" height="44"
+               translation="[20,20]" color="#00000099" cornerRadius="8" />
+    <Label id="camLabel" text=""
+           translation="[32,24]" color="#FFFFFF">
+      <Font role="font" uri="" size="28" />
+    </Label>
+
+    <!-- Floating overlay (bounces for anti-burn-in) -->
+    <Group id="overlay" translation="[100,100]">
+      <Rectangle id="overlayBg" width="420" height="160"
+                 color="#00000059" cornerRadius="14" />
+      <LayoutGroup id="overlayContent" translation="[24,16]"
+                   layoutDirection="vert" itemSpacings="[2]">
+        <Label id="clock" text=""
+               color="#FFFFFF" width="372" horizAlign="right">
+          <Font role="font" uri="" size="64" />
+        </Label>
+        <Label id="dateLabel" text=""
+               color="#CCCCCCCC" width="372" horizAlign="right">
+          <Font role="font" uri="" size="24" />
+        </Label>
+        <Rectangle width="372" height="1" color="#FFFFFF33" />
+        <Label id="dataChip" text=""
+               color="#FFB74D" width="372" horizAlign="right">
+          <Font role="font" uri="" size="26" />
+        </Label>
+      </LayoutGroup>
+    </Group>
+
+    <!-- Crossfade animations -->
+    <Animation id="fadeInA" duration="1.0" repeat="false" easeFunction="inOutCubic">
+      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[0.0, 1.0]"
+                              fieldToInterp="photoA.opacity" />
+    </Animation>
+    <Animation id="fadeOutA" duration="1.0" repeat="false" easeFunction="inOutCubic">
+      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[1.0, 0.0]"
+                              fieldToInterp="photoA.opacity" />
+    </Animation>
+    <Animation id="fadeInB" duration="1.0" repeat="false" easeFunction="inOutCubic">
+      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[0.0, 1.0]"
+                              fieldToInterp="photoB.opacity" />
+    </Animation>
+    <Animation id="fadeOutB" duration="1.0" repeat="false" easeFunction="inOutCubic">
+      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[1.0, 0.0]"
+                              fieldToInterp="photoB.opacity" />
+    </Animation>
+
+    <!-- Timers -->
+    <Timer id="photoTimer" repeat="true" duration="10" />
+    <Timer id="clockTimer" repeat="true" duration="30" />
+    <Timer id="dataTimer" repeat="true" duration="120" />
+    <Timer id="bounceTimer" repeat="true" duration="1" />
+  </children>
+
+  <script type="text/brightscript" uri="ScreensaverScene.brs" />
+</component>
