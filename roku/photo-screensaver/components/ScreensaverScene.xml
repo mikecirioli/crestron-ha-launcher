@@ -22,7 +22,9 @@
                color="#FFFF00" width="372" horizAlign="right" />
         <Rectangle width="372" height="1" color="#FFFFFF99" />
         <Label id="dataChip" text=""
-               color="#00FF00" width="372" horizAlign="right" />
+               color="#00FF00" width="372" horizAlign="right">
+          <Font role="font" uri="pkg:/fonts/DejaVuSans.ttf" size="14" />
+        </Label>
       </LayoutGroup>
     </Group>
 

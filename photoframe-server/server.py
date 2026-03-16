@@ -7,6 +7,8 @@ Endpoints:
   /              HTML page — full-screen photo frame with auto-refresh and clock overlay
   /random        Returns a random image file (JPEG/PNG/WebP) with proper content-type
   /random?w=1280&h=800  Resize on the fly (requires Pillow)
+  /camera/list   JSON array of available camera names (from go2rtc, requires GO2RTC_URL)
+  /camera/<name> JPEG snapshot from a camera via go2rtc (optional ?w=&h= resize)
   /frigate/*     Proxy to Frigate API (requires FRIGATE_URL env var, adds CORS headers)
   /ha/weather    Plain text: current weather summary
   /ha/forecast   Plain text: 3-day forecast
@@ -20,6 +22,8 @@ Environment variables:
   REFRESH        Seconds between photo changes on the HTML page (default: 30)
   TITLE          Page title / overlay text (default: empty)
   FRIGATE_URL    Frigate base URL for proxy (e.g. http://192.168.1.207:5000)
+  GO2RTC_URL     go2rtc base URL for camera snapshots (e.g. http://192.168.1.207:1984)
+  CAMERA_IDLE    Seconds with no requests before closing a camera stream (default: 30)
   HA_URL         Home Assistant URL (e.g. http://192.168.1.245:8123)
   HA_TOKEN       Long-lived access token for HA REST API
 
@@ -48,6 +52,8 @@ PORT = int(os.environ.get("PORT", "8099"))
 REFRESH = int(os.environ.get("REFRESH", "30"))
 TITLE = os.environ.get("TITLE", "")
 FRIGATE_URL = os.environ.get("FRIGATE_URL", "")  # e.g. http://192.168.1.207:5000
+GO2RTC_URL = os.environ.get("GO2RTC_URL", "").rstrip("/")  # e.g. http://192.168.1.207:1984
+CAMERA_IDLE = int(os.environ.get("CAMERA_IDLE", "30"))  # seconds with no requests before shutting down stream
 HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
@@ -296,6 +302,170 @@ def ha_next_event():
     return _cached("event", fetch)
 
 
+# ── Camera snapshots ──────────────────────────────────────
+# On-demand frame poller using thingino's /image.jpg endpoint.
+# Fetches frames directly from the camera's ISP (~230ms, full res)
+# rather than go2rtc frame API (~4s, keyframe-limited).
+#
+# Lazy start: poller thread starts on first request, stops after
+# CAMERA_IDLE seconds with no requests.
+#
+# TODO: Generalize camera configs. Currently hardcoded for gatetown.
+# Future: parse camera IP/creds from go2rtc stream URLs, or accept
+# a CAMERAS env var with JSON config like:
+#   [{"name":"gatetown","ip":"192.168.1.55","user":"root","pass":"xxx"}, ...]
+
+_CAMERAS = {
+    "gatetown": {"ip": "192.168.1.55", "user": "root", "pass": "gatetown"},
+}
+
+
+def _go2rtc_streams():
+    """Fetch stream names from go2rtc, return list of base camera names."""
+    if not GO2RTC_URL:
+        return []
+    try:
+        resp = urlopen(GO2RTC_URL + "/api/streams", timeout=5)
+        data = json.loads(resp.read())
+        names = set()
+        for key in data:
+            base = key.rsplit("_main", 1)[0].rsplit("_sub", 1)[0]
+            names.add(base)
+        return sorted(names)
+    except Exception:
+        return []
+
+
+class CameraStream:
+    """Polls a thingino camera's /image.jpg for live frames."""
+
+    def __init__(self, name, ip, user, password):
+        self.name = name
+        self._ip = ip
+        self._user = user
+        self._pass = password
+        self._session = None
+        self._frame = None
+        self._lock = threading.Lock()
+        self._last_request = 0
+        self._running = False
+
+    def get_frame(self):
+        """Return the latest JPEG frame, starting the poller if needed."""
+        self._last_request = time.time()
+        if not self._running:
+            self._start()
+            for _ in range(50):  # wait up to 5s for first frame
+                time.sleep(0.1)
+                with self._lock:
+                    if self._frame is not None:
+                        return self._frame
+        with self._lock:
+            return self._frame
+
+    def _start(self):
+        if self._running:
+            return
+        self._running = True
+        t = threading.Thread(target=self._poll_loop, daemon=True)
+        t.start()
+
+    def _login(self):
+        """Get a thingino session cookie."""
+        try:
+            url = "http://{}/x/login.cgi".format(self._ip)
+            body = json.dumps({"username": self._user, "password": self._pass}, separators=(',', ':')).encode()
+            req = Request(url, data=body, method="POST")
+            req.add_header("Content-Type", "application/json")
+            resp = urlopen(req, timeout=5)
+            cookie = resp.headers.get("Set-Cookie", "")
+            for part in cookie.split(";"):
+                part = part.strip()
+                if part.startswith("thingino_session="):
+                    self._session = part.split("=", 1)[1]
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _fetch_frame(self):
+        """Fetch a single frame. Returns JPEG bytes or None."""
+        if not self._session:
+            if not self._login():
+                return None
+        url = "http://{}/image.jpg".format(self._ip)
+        req = Request(url)
+        req.add_header("Cookie", "thingino_session=" + self._session)
+        try:
+            resp = urlopen(req, timeout=5)
+            if resp.status == 200:
+                return resp.read()
+        except Exception:
+            pass
+        # Session may have expired — retry with fresh login
+        if self._login():
+            req = Request(url)
+            req.add_header("Cookie", "thingino_session=" + self._session)
+            try:
+                resp = urlopen(req, timeout=5)
+                if resp.status == 200:
+                    return resp.read()
+            except Exception:
+                pass
+        return None
+
+    def _poll_loop(self):
+        """Continuously fetch frames until idle timeout."""
+        while self._running:
+            if time.time() - self._last_request > CAMERA_IDLE:
+                self._running = False
+                with self._lock:
+                    self._frame = None
+                return
+            raw = self._fetch_frame()
+            if raw:
+                with self._lock:
+                    self._frame = raw
+
+
+_streams = {}
+_streams_lock = threading.Lock()
+
+
+def camera_snapshot(name, max_w=None, max_h=None):
+    """Get latest frame for a camera. Returns (jpeg_bytes, content_type)."""
+    cam = _CAMERAS.get(name)
+    if not cam:
+        return None, None
+    with _streams_lock:
+        stream = _streams.get(name)
+        if stream is None:
+            stream = CameraStream(name, cam["ip"], cam["user"], cam["pass"])
+            _streams[name] = stream
+
+    raw = stream.get_frame()
+    if raw is None:
+        return None, None
+    if max_w and max_h:
+        return _resize_jpeg(raw, max_w, max_h)
+    return raw, "image/jpeg"
+
+
+def _resize_jpeg(data, max_w, max_h):
+    """Resize JPEG bytes. Returns (bytes, content_type)."""
+    try:
+        from PIL import Image
+        img = Image.open(BytesIO(data))
+        if img.width <= max_w and img.height <= max_h:
+            return data, "image/jpeg"
+        img.thumbnail((max_w, max_h), Image.LANCZOS)
+        buf = BytesIO()
+        img.save(buf, "JPEG", quality=85)
+        return buf.getvalue(), "image/jpeg"
+    except ImportError:
+        return data, "image/jpeg"
+
+
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -455,6 +625,10 @@ class PhotoHandler(BaseHTTPRequestHandler):
             self.serve_html()
         elif path == "/random":
             self.serve_random(parsed)
+        elif path == "/camera/list" and GO2RTC_URL:
+            self.serve_camera_list()
+        elif path.startswith("/camera/") and GO2RTC_URL:
+            self.serve_camera(path, parsed)
         elif path.startswith("/frigate") and FRIGATE_URL:
             self.proxy_frigate(parsed)
         elif path.startswith("/ha/"):
@@ -487,6 +661,40 @@ class PhotoHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_camera_list(self):
+        """Return JSON array of available camera names."""
+        names = sorted(set(list(_CAMERAS.keys()) + _go2rtc_streams()))
+        data = json.dumps(names).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def serve_camera(self, path, parsed):
+        """Serve a camera snapshot via go2rtc."""
+        # /camera/frontDoor → name = "frontDoor"
+        name = path[len("/camera/"):]
+        if not name:
+            self.send_error(400, "Missing camera name")
+            return
+        params = parse_qs(parsed.query)
+        max_w = int(params["w"][0]) if "w" in params else None
+        max_h = int(params["h"][0]) if "h" in params else None
+        data, ct = camera_snapshot(name, max_w, max_h)
+        if not data:
+            self.send_error(502, "Failed to fetch snapshot for {}".format(name))
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ct)
+        self.send_header("Cache-Control", "no-cache, no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -569,6 +777,11 @@ if __name__ == "__main__":
     print(f"photoframe-server: {len(photos)} photos in {PHOTO_DIR}, port {PORT}, refresh {REFRESH}s")
     if not photos:
         print(f"WARNING: no images found in {PHOTO_DIR}", file=sys.stderr)
+    if GO2RTC_URL:
+        cams = _go2rtc_streams()
+        print(f"  go2rtc: {len(cams)} cameras via {GO2RTC_URL}")
+        if cams:
+            print(f"  cameras: {', '.join(cams)}")
 
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         daemon_threads = True
