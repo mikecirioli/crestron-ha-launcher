@@ -11,9 +11,10 @@ Crestron screensaver — floating clock overlay with rotating data chips
 (weather, calendar, thermostat, forecast).
 
 ### camera-screensaver
-Cycles through Frigate camera snapshots via the photoframe-server's
-`/frigate/api/<camera>/latest.jpg` proxy. Includes the same floating
-overlay and data chip rotation. Camera name shown in the top-left corner.
+Cycles through camera snapshots via the photoframe-server's
+`/camera/<name>` endpoint. Uses thingino's direct ISP snapshot for
+near-realtime frames (~230ms). Includes the same floating overlay
+and data chip rotation. Camera name shown in the top-left corner.
 
 ## Configuration
 
@@ -53,9 +54,17 @@ Each channel needs `images/icon.png` (336x210 HD) and
 valid image of the right size — they're only shown in the Roku UI,
 not during the screensaver itself.
 
-## go2rtc (Future)
+## Camera Snapshots
 
-The camera screensaver currently uses Frigate's detection stream
-snapshots (`/api/<cam>/latest.jpg`), which are lower resolution.
-A future update will optionally use go2rtc for full-resolution
-camera snapshots.
+The camera screensaver uses photoframe-server's `/camera/<name>`
+endpoint, which fetches frames directly from thingino cameras'
+`/image.jpg` ISP endpoint (~230ms per frame, full 1920x1080).
+
+A background polling thread starts on first request and auto-stops
+after 30 seconds of inactivity to conserve resources. Camera
+discovery uses `/camera/list` (populated from go2rtc stream names
+plus any hardcoded cameras in server.py).
+
+Camera configs are currently hardcoded in `server.py`'s `_CAMERAS`
+dict. Future: accept a `CAMERAS` JSON env var for easy multi-camera
+setup without code changes.

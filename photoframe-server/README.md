@@ -132,6 +132,8 @@ rm /home/youruser/photos/old-photo.jpg
 | `/` | Full-screen HTML page with fade transitions and clock overlay | Point any browser or kiosk at this |
 | `/random` | A random image file with proper content-type | API endpoint for custom dashboards |
 | `/random?w=1280&h=800` | Random image resized on the fly | Bandwidth-friendly for constrained devices |
+| `/camera/list` | JSON array of available camera names | Roku/Crestron screensaver camera discovery |
+| `/camera/<name>` | Live JPEG snapshot from a camera (~230ms, full res) | Camera screensaver, near-realtime frames |
 | `/frigate/*` | Proxied Frigate API (requires `FRIGATE_URL` env var) | Detection strip in Panel Lite |
 | `/health` | `ok` | Container/load balancer health check |
 
@@ -146,6 +148,8 @@ All configuration is via environment variables in `docker-compose.yaml`:
 | `REFRESH` | `30` | Seconds between photo changes |
 | `TITLE` | _(empty)_ | Optional text shown in the clock overlay |
 | `FRIGATE_URL` | _(empty)_ | Frigate base URL for detection proxy (e.g. `http://192.168.1.207:5000`). When set, `/frigate/*` requests are proxied to Frigate with CORS headers, enabling the Panel Lite detection strip to fetch events cross-origin. |
+| `GO2RTC_URL` | _(empty)_ | go2rtc base URL (e.g. `http://192.168.1.207:1984`). Enables `/camera/list` discovery from go2rtc streams. |
+| `CAMERA_IDLE` | `30` | Seconds with no requests before a camera polling thread shuts down. |
 
 ## Optional: Weather Overlay (requires Home Assistant)
 
