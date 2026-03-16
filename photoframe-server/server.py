@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0.
+# https://creativecommons.org/licenses/by-nc-sa/4.0/
 """
 Minimal HTTP server that serves random photos from a directory,
 with optional Frigate API proxy and HA state endpoints.
@@ -21,11 +23,16 @@ Environment variables:
   PORT           Listen port (default: 8099)
   REFRESH        Seconds between photo changes on the HTML page (default: 30)
   TITLE          Page title / overlay text (default: empty)
-  FRIGATE_URL    Frigate base URL for proxy (e.g. http://192.168.1.207:5000)
-  GO2RTC_URL     go2rtc base URL for camera snapshots (e.g. http://192.168.1.207:1984)
+  FRIGATE_URL    Frigate base URL for proxy (e.g. http://frigate:5000)
+  GO2RTC_URL     go2rtc base URL for camera list discovery (e.g. http://go2rtc:1984)
+  CAMERAS        JSON object of thingino cameras — see below
   CAMERA_IDLE    Seconds with no requests before closing a camera stream (default: 30)
-  HA_URL         Home Assistant URL (e.g. http://192.168.1.245:8123)
+  HA_URL         Home Assistant URL (e.g. http://homeassistant:8123)
   HA_TOKEN       Long-lived access token for HA REST API
+
+CAMERAS format (JSON object, keys are camera names):
+  {"cam1":{"ip":"10.0.0.5","user":"root","pass":"secret"}, ...}
+  Cameras must run thingino firmware with /x/ch0.jpg snapshot endpoint.
 
 Usage:
   python3 server.py
@@ -310,14 +317,17 @@ def ha_next_event():
 # Lazy start: poller thread starts on first request, stops after
 # CAMERA_IDLE seconds with no requests.
 #
-# TODO: Generalize camera configs. Currently hardcoded for gatetown.
-# Future: parse camera IP/creds from go2rtc stream URLs, or accept
-# a CAMERAS env var with JSON config like:
-#   [{"name":"gatetown","ip":"192.168.1.55","user":"root","pass":"xxx"}, ...]
-
-_CAMERAS = {
-    "gatetown": {"ip": "192.168.1.55", "user": "root", "pass": "gatetown"},
-}
+# Camera configs loaded from CAMERAS env var (JSON object).
+# Keys are camera names, values have ip/user/pass for thingino auth.
+# Example:
+#   CAMERAS='{"gatetown":{"ip":"192.168.1.55","user":"root","pass":"secret"}}'
+_CAMERAS = {}
+_cameras_env = os.environ.get("CAMERAS", "")
+if _cameras_env:
+    try:
+        _CAMERAS = json.loads(_cameras_env)
+    except json.JSONDecodeError:
+        print("WARNING: CAMERAS env var is not valid JSON, ignoring")
 
 
 def _go2rtc_streams():
@@ -389,11 +399,11 @@ class CameraStream:
         return False
 
     def _fetch_frame(self):
-        """Fetch a single frame. Returns JPEG bytes or None."""
+        """Fetch a single frame from /x/ch0.jpg. Returns JPEG bytes or None."""
         if not self._session:
             if not self._login():
                 return None
-        url = "http://{}/image.jpg".format(self._ip)
+        url = "http://{}/x/ch0.jpg".format(self._ip)
         req = Request(url)
         req.add_header("Cookie", "thingino_session=" + self._session)
         try:

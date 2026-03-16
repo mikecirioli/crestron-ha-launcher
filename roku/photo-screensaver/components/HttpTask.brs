@@ -1,3 +1,6 @@
+' Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0.
+' https://creativecommons.org/licenses/by-nc-sa/4.0/
+
 sub init()
     m.top.functionName = "doFetch"
 end sub

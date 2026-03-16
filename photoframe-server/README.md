@@ -148,7 +148,8 @@ All configuration is via environment variables in `docker-compose.yaml`:
 | `REFRESH` | `30` | Seconds between photo changes |
 | `TITLE` | _(empty)_ | Optional text shown in the clock overlay |
 | `FRIGATE_URL` | _(empty)_ | Frigate base URL for detection proxy (e.g. `http://192.168.1.207:5000`). When set, `/frigate/*` requests are proxied to Frigate with CORS headers, enabling the Panel Lite detection strip to fetch events cross-origin. |
-| `GO2RTC_URL` | _(empty)_ | go2rtc base URL (e.g. `http://192.168.1.207:1984`). Enables `/camera/list` discovery from go2rtc streams. |
+| `GO2RTC_URL` | _(empty)_ | go2rtc base URL (e.g. `http://go2rtc:1984`). Enables `/camera/list` discovery from go2rtc streams. |
+| `CAMERAS` | _(empty)_ | JSON object of thingino camera configs. See [Camera Snapshots](#camera-snapshots-thingino) below. |
 | `CAMERA_IDLE` | `30` | Seconds with no requests before a camera polling thread shuts down. |
 
 ## Optional: Weather Overlay (requires Home Assistant)
@@ -211,6 +212,21 @@ docker compose up -d --build
 ## Supported Image Formats
 
 jpg, jpeg, png, webp, gif, bmp — any mix in the same directory.
+
+## Camera Snapshots (thingino)
+
+The server can serve live camera snapshots from [thingino](https://github.com/themactep/thingino-firmware) cameras. Each camera is polled on-demand — the first request starts a background thread that continuously fetches frames from the camera's `/x/ch0.jpg` endpoint. After `CAMERA_IDLE` seconds with no requests, the thread shuts down automatically.
+
+Configure cameras via the `CAMERAS` env var with a JSON object:
+
+```yaml
+environment:
+  - CAMERAS={"frontyard":{"ip":"10.0.0.5","user":"root","pass":"secret"},"backyard":{"ip":"10.0.0.6","user":"root","pass":"secret2"}}
+```
+
+Each key is the camera name used in the `/camera/<name>` URL. Values must include `ip`, `user`, and `pass` for thingino session authentication.
+
+If `GO2RTC_URL` is also set, the `/camera/list` endpoint returns the union of configured cameras and go2rtc stream names (deduplicated). Only cameras in the `CAMERAS` config can serve snapshots.
 
 ## Integration with Panel Lite Dashboard
 

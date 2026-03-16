@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0.
+# https://creativecommons.org/licenses/by-nc-sa/4.0/
 """
 Resize and fix photos in-place for TSW-1060 display (1280x800).
 Auto-rotates based on EXIF orientation, then shrinks if larger than target.

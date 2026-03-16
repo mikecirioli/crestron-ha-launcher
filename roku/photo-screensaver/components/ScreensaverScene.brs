@@ -1,21 +1,32 @@
+' Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0.
+' https://creativecommons.org/licenses/by-nc-sa/4.0/
+'
 ' ============================================================
-' Photo Frame Screensaver for Roku
+' 3 Bad Dogs Screensaver for Roku
 ' ============================================================
-' Displays random photos from a photoframe-server instance with
-' a floating clock overlay and rotating data chips.
+' Two modes (selectable via screensaver settings):
+'   "photo"  — random photos with crossfade from photoframe-server
+'   "camera" — live camera snapshots (near-realtime via thingino)
+'
+' Both modes share the floating clock overlay with rotating
+' data chips (weather, calendar, thermostat, forecast).
 '
 ' Configuration: edit the constants below.
 ' ============================================================
 
 sub init()
     ' ── Configuration ──────────────────────────────────────────
-    ' Only this section needs editing for your setup.
     m.SERVER_URL  = "http://192.168.1.245:8099"
     m.PHOTO_W     = 1920
     m.PHOTO_H     = 1080
     m.PHOTO_SEC   = 30       ' seconds between photo changes
+    m.CAMERA_SEC  = 1        ' seconds between camera snapshot refreshes
     m.DATA_SEC    = 120      ' seconds between data chip rotation
-    m.PHOTO_FIT   = "scaleToFit"  ' "scaleToFit" = contain, "scaleToZoom" = fill/crop
+    m.PHOTO_FIT   = "scaleToFit"
+
+    m.CYCLE_SEC   = 5        ' seconds per camera when cycling
+    m.cameraName  = "gatetown"  ' fallback default
+    m.BLACKLIST   = ["driveway", "armory", "critter", "frontPorch"]
 
     ' Data sources — each cycle shows the next one
     m.dataSources = [
@@ -25,6 +36,19 @@ sub init()
         "/ha/forecast"
     ]
     ' ── End configuration ──────────────────────────────────────
+
+    ' Read saved settings from registry
+    sec = CreateObject("roRegistrySection", "settings")
+    m.mode = sec.Read("mode")
+    if m.mode <> "camera" then m.mode = "photo"
+
+    ' Camera selection: specific camera name or "cycle"
+    savedCamera = sec.Read("camera")
+    if savedCamera <> "" then m.cameraName = savedCamera
+    m.cycleMode = (m.cameraName = "cycle")
+    m.cameraList = []
+    m.cameraIndex = 0
+    m.cycleCounter = 0
 
     ' Photo state
     m.front = "a"
@@ -58,9 +82,13 @@ sub init()
     m.photoA.observeField("loadStatus", "onPhotoLoadA")
     m.photoB.observeField("loadStatus", "onPhotoLoadB")
 
-    ' Set up and start timers
+    ' Set up photo/camera timer based on mode
     m.photoTimer = m.top.findNode("photoTimer")
-    m.photoTimer.duration = m.PHOTO_SEC
+    if m.mode = "camera"
+        m.photoTimer.duration = m.CAMERA_SEC
+    else
+        m.photoTimer.duration = m.PHOTO_SEC
+    end if
     m.photoTimer.observeField("fire", "onPhotoTimer")
     m.photoTimer.control = "start"
 
@@ -77,27 +105,50 @@ sub init()
     m.bounceTimer.observeField("fire", "onBounce")
     m.bounceTimer.control = "start"
 
+    ' Camera mode: both posters opaque, Z-order handles visibility
+    ' photoB (on top) is the primary display, photoA is the backdrop
+    if m.mode = "camera"
+        m.photoA.opacity = 1.0
+        m.photoB.opacity = 1.0
+        ' If cycle mode, fetch camera list before first image
+        if m.cycleMode
+            fetchCameraList()
+        end if
+    end if
+
     ' Initial render
     updateClock()
-    loadNextPhoto()
+    loadNextImage()
     fetchNextData()
 end sub
 
-' ── Photo loading ──────────────────────────────────────────
+' ── Image loading (photo or camera) ──────────────────────
 
-sub loadNextPhoto()
+sub loadNextImage()
     ts = CreateObject("roDateTime")
-    url = m.SERVER_URL + "/random?w=" + m.PHOTO_W.toStr() + "&h=" + m.PHOTO_H.toStr() + "&t=" + ts.asSeconds().toStr()
+    if m.mode = "camera"
+        ' Don't load until we have a real camera name
+        if m.cycleMode and m.cameraList.count() = 0 then return
 
-    if m.front = "a"
+        ' Camera mode: always load into photoB (on top in Z-order).
+        ' While loading, photoA shows through with previous frame = no flicker.
+        ' When ready, photoB covers photoA seamlessly.
+        url = m.SERVER_URL + "/camera/" + m.cameraName + "?t=" + ts.asSeconds().toStr()
         m.photoB.uri = url
     else
-        m.photoA.uri = url
+        ' Photo mode: load into back buffer for crossfade
+        url = m.SERVER_URL + "/random?w=" + m.PHOTO_W.toStr() + "&h=" + m.PHOTO_H.toStr() + "&t=" + ts.asSeconds().toStr()
+        if m.front = "a"
+            m.photoB.uri = url
+        else
+            m.photoA.uri = url
+        end if
     end if
 end sub
 
 sub onPhotoLoadA(event as object)
     if event.getData() = "ready"
+        if m.mode = "camera" then return
         m.fadeInA.control = "start"
         m.fadeOutB.control = "start"
         m.front = "a"
@@ -106,6 +157,11 @@ end sub
 
 sub onPhotoLoadB(event as object)
     if event.getData() = "ready"
+        if m.mode = "camera"
+            ' Sync photoA (behind) to current frame so it's the backdrop for next load
+            m.photoA.uri = m.photoB.uri
+            return
+        end if
         m.fadeInB.control = "start"
         m.fadeOutA.control = "start"
         m.front = "b"
@@ -113,7 +169,58 @@ sub onPhotoLoadB(event as object)
 end sub
 
 sub onPhotoTimer()
-    loadNextPhoto()
+    ' In cycle mode, advance camera every CYCLE_SEC seconds
+    if m.cycleMode and m.cameraList.count() > 0
+        m.cycleCounter = m.cycleCounter + 1
+        cycleTicks = m.CYCLE_SEC / m.CAMERA_SEC
+        if cycleTicks < 1 then cycleTicks = 1
+        if m.cycleCounter >= cycleTicks
+            m.cycleCounter = 0
+            m.cameraIndex = (m.cameraIndex + 1) mod m.cameraList.count()
+            m.cameraName = m.cameraList[m.cameraIndex]
+        end if
+    end if
+    loadNextImage()
+end sub
+
+' ── Camera list for cycle mode ───────────────────────────
+
+sub fetchCameraList()
+    ts = CreateObject("roDateTime")
+    url = m.SERVER_URL + "/camera/list?t=" + ts.asSeconds().toStr()
+    task = CreateObject("roSGNode", "HttpTask")
+    task.observeField("response", "onCameraListResponse")
+    task.request = { url: url }
+    task.control = "run"
+    m.cameraListTask = task
+end sub
+
+sub onCameraListResponse(event as object)
+    text = event.getData()
+    if text = invalid or text = "" then return
+
+    json = ParseJSON(text)
+    if json = invalid or type(json) <> "roArray" or json.count() = 0 then return
+
+    ' Filter blacklisted cameras
+    filtered = []
+    for each name in json
+        skip = false
+        for each bl in m.BLACKLIST
+            if LCase(name) = LCase(bl) then skip = true
+        end for
+        if not skip then filtered.push(name)
+    end for
+
+    if filtered.count() = 0 then return
+
+    m.cameraList = filtered
+    m.cameraIndex = 0
+    m.cameraName = m.cameraList[0]
+    m.cycleCounter = 0
+
+    ' Now start loading images
+    loadNextImage()
 end sub
 
 ' ── Clock overlay ──────────────────────────────────────────
@@ -122,7 +229,6 @@ sub updateClock()
     dt = CreateObject("roDateTime")
     dt.toLocalTime()
 
-    ' Format time (12-hour with AM/PM)
     hours = dt.getHours()
     ampm = "AM"
     if hours >= 12 then ampm = "PM"
@@ -133,7 +239,6 @@ sub updateClock()
     if mins < 10 then minStr = "0" + minStr
     m.clock.text = hours.toStr() + ":" + minStr + " " + ampm
 
-    ' Format date
     days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
     months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
     dow = dt.getDayOfWeek()
@@ -153,8 +258,6 @@ sub onClockTimer()
 end sub
 
 ' ── Rotating data chips ────────────────────────────────────
-' Each cycle fetches the next data source via HttpTask.
-' Sources: weather -> event -> thermostat -> forecast -> ...
 
 sub fetchNextData()
     if m.dataSources.count() = 0 then return
@@ -169,7 +272,7 @@ sub fetchNextData()
     task.observeField("response", "onDataResponse")
     task.request = { url: url }
     task.control = "run"
-    m.dataTask = task  ' prevent GC
+    m.dataTask = task
 end sub
 
 sub onDataResponse(event as object)
@@ -177,7 +280,6 @@ sub onDataResponse(event as object)
     if text <> invalid and text <> ""
         m.dataChip.text = text
     end if
-    ' Resize overlay background to fit content
     resizeOverlay()
 end sub
 
@@ -190,8 +292,8 @@ end sub
 sub resizeOverlay()
     content = m.top.findNode("overlayContent")
     rect = content.boundingRect()
-    w = rect.width + 48  ' 24px padding each side
-    h = rect.height + 32 ' 16px padding each side
+    w = rect.width + 48
+    h = rect.height + 32
     if w < 200 then w = 200
     if h < 100 then h = 100
     m.overlayBg.width = w

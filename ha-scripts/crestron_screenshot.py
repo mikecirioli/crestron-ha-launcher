@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0.
+# https://creativecommons.org/licenses/by-nc-sa/4.0/
 """
 Take a screenshot from a Crestron TSW panel, download via SFTP, convert to JPG.
 

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0. -->
+<!-- https://creativecommons.org/licenses/by-nc-sa/4.0/ -->
+<component name="SettingsScene" extends="Scene">
+  <children>
+    <Rectangle width="1920" height="1080" color="#1a1a2e" />
+
+    <LayoutGroup translation="[200,100]" layoutDirection="vert" itemSpacings="[30]">
+      <Label id="title" text="3 Bad Dogs Screensaver"
+             color="#FFFFFF" />
+      <Label id="subtitle" text="Select screensaver mode:"
+             color="#AAAAAA" />
+
+      <RadioButtonList id="modeList" focusable="true">
+        <ContentNode role="content">
+          <ContentNode title="Photo Frame — random photos with crossfade" />
+          <ContentNode title="Camera — cycle all cameras (5s each)" />
+        </ContentNode>
+      </RadioButtonList>
+
+      <Label id="loading" text="Loading cameras..."
+             color="#666666" visible="false" />
+
+      <Label id="hint" text="Press OK to select, then Back to save and exit"
+             color="#666666" />
+    </LayoutGroup>
+  </children>
+
+  <script type="text/brightscript" uri="SettingsScene.brs" />
+</component>

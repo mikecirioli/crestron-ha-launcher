@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Mike Cirioli. Licensed under CC BY-NC-SA 4.0.
+# https://creativecommons.org/licenses/by-nc-sa/4.0/
 """
 Send a console command to a Crestron panel via SSH.
 
