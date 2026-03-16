@@ -115,6 +115,7 @@
     -webkit-flex-direction: column;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
   }
 
   /* Weather section */
@@ -232,6 +233,90 @@
   }
   .calendar-section::-webkit-scrollbar { width: 4px; }
   .calendar-section::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+  /* Screensaver mode picker */
+  .ss-mode-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.3);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .ss-mode-bar:active { background: rgba(255,255,255,0.08); }
+  .ss-mode-icon { font-size: 16px; opacity: 0.7; }
+  .ss-mode-label {
+    flex: 1;
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ss-mode-arrow {
+    font-size: 11px;
+    opacity: 0.4;
+    transition: transform 0.2s;
+  }
+  .ss-mode-bar.open .ss-mode-arrow { transform: rotate(180deg); }
+
+  .ss-mode-picker {
+    display: none;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 70%;
+    background: #1a1d23;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    overflow-y: auto;
+    z-index: 50;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+  .ss-mode-picker.visible { display: block; }
+  .ss-mode-picker::-webkit-scrollbar { width: 4px; }
+  .ss-mode-picker::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+  .ss-mode-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    color: rgba(255,255,255,0.75);
+  }
+  .ss-mode-option:active { background: rgba(255,255,255,0.08); }
+  .ss-mode-option.selected { color: #4fc3f7; }
+  .ss-mode-radio {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.3);
+    flex-shrink: 0;
+    position: relative;
+  }
+  .ss-mode-option.selected .ss-mode-radio {
+    border-color: #4fc3f7;
+  }
+  .ss-mode-option.selected .ss-mode-radio::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #4fc3f7;
+  }
+  .ss-mode-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+    margin: 2px 14px;
+  }
 
   .cal-day-header {
     font-size: 12px;
@@ -415,6 +500,12 @@
         <div class="weather-section" id="weather-section"></div>
         <div class="thermostat-section" id="thermostat-section"></div>
         <div class="calendar-section" id="calendar-section"></div>
+        <div class="ss-mode-bar" id="ss-mode-bar">
+          <span class="ss-mode-icon" id="ss-mode-icon"></span>
+          <span class="ss-mode-label" id="ss-mode-label">Photo Frame</span>
+          <span class="ss-mode-arrow">&#x25BC;</span>
+        </div>
+        <div class="ss-mode-picker" id="ss-mode-picker"></div>
       </div>
     </div>
     <div class="detection-strip" id="detection-strip"></div>
@@ -543,6 +634,22 @@ window.onerror = function(msg, src, line, col, err) {
   // Screensaver photo state
   var ssLoadTimer = null;
   var ssSlideTimer = null;
+
+  // Screensaver mode: 'photo', 'camera-cycle', or 'camera:<name>'
+  var ssMode = 'photo';
+  var ssCameraList = [];      // fetched from photoframe-server
+  var ssCamIndex = 0;         // current index in cycle mode
+  var ssCamCycleCounter = 0;  // ticks since last camera switch
+  var SS_CAM_REFRESH_MS = 2000;   // camera snapshot refresh rate
+  var SS_CAM_CYCLE_SEC = 5;       // seconds per camera when cycling
+  var ssCamRefreshTimer = null;
+  var ssCamPending = false;
+
+  // Load saved screensaver mode
+  try {
+    var saved = localStorage.getItem('ssMode');
+    if (saved) ssMode = saved;
+  } catch(e) {}
 
   // Timers (stored for cleanup)
   var camRefreshInterval = null;
@@ -1454,18 +1561,26 @@ window.onerror = function(msg, src, line, col, err) {
   }
 
   function startScreensaver() {
-    showNextPhoto();
-    if (ssSlideTimer) clearInterval(ssSlideTimer);
-    ssSlideTimer = setInterval(showNextPhoto, PHOTO_MS);
-    renderSSClock();
-    renderSSWeather();
-    renderSSNextEvent();
-    renderSSDebug();
+    if (ssMode === 'photo') {
+      showNextPhoto();
+      if (ssSlideTimer) clearInterval(ssSlideTimer);
+      ssSlideTimer = setInterval(showNextPhoto, PHOTO_MS);
+      renderSSClock();
+      renderSSWeather();
+      renderSSNextEvent();
+      renderSSDebug();
+    } else {
+      startCameraScreensaver();
+    }
   }
 
   function stopScreensaver() {
+    // Stop photo mode
     if (ssSlideTimer) { clearInterval(ssSlideTimer); ssSlideTimer = null; }
     clearTimeout(ssLoadTimer);
+    // Stop camera mode
+    stopCameraScreensaver();
+    // Clean up images
     ssPhotoA.onload = null; ssPhotoA.onerror = null;
     ssPhotoB.onload = null; ssPhotoB.onerror = null;
     ssPhotoA.src = BLANK; ssPhotoB.src = BLANK;
@@ -1485,6 +1600,9 @@ window.onerror = function(msg, src, line, col, err) {
     var dateText = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
     if (isCameraWatch && watchCamIdx >= 0 && CAMERAS[watchCamIdx]) {
       dateText = CAMERAS[watchCamIdx].name + '  \u00B7  ' + dateText;
+    } else if (isScreensaver && ssMode !== 'photo') {
+      var camName = getCameraName();
+      if (camName) dateText = camName + '  \u00B7  ' + dateText;
     }
     document.getElementById('ss-date').textContent = dateText;
   }
@@ -1659,11 +1777,247 @@ window.onerror = function(msg, src, line, col, err) {
   }, 30000);
 
   // ══════════════════════════════════════════════════════════
+  // SCREENSAVER MODE PICKER
+  // ══════════════════════════════════════════════════════════
+
+  var BLACKLISTED_CAMS = ['driveway', 'armory', 'critter', 'frontPorch'];
+
+  function ssModeIcon(mode) {
+    if (mode === 'photo') return '\uD83D\uDDBC';          // framed picture
+    if (mode === 'camera-cycle') return '\uD83C\uDFA5';   // film camera
+    return '\uD83D\uDCF7';                                 // camera
+  }
+
+  function ssModeDisplayName(mode) {
+    if (mode === 'photo') return 'Photo Frame';
+    if (mode === 'camera-cycle') return 'Cycle All Cameras';
+    if (mode.indexOf('camera:') === 0) return mode.substring(7);
+    return mode;
+  }
+
+  function updateModeBar() {
+    document.getElementById('ss-mode-icon').textContent = ssModeIcon(ssMode);
+    document.getElementById('ss-mode-label').textContent = ssModeDisplayName(ssMode);
+  }
+
+  function saveSsMode(mode) {
+    ssMode = mode;
+    try { localStorage.setItem('ssMode', mode); } catch(e) {}
+    updateModeBar();
+    dbg('ss: mode set to ' + mode);
+  }
+
+  function buildModePicker() {
+    var picker = document.getElementById('ss-mode-picker');
+    var html = '';
+    var options = [
+      { value: 'photo', label: 'Photo Frame' },
+      { value: 'camera-cycle', label: 'Cycle All Cameras' }
+    ];
+    for (var i = 0; i < ssCameraList.length; i++) {
+      options.push({ value: 'camera:' + ssCameraList[i], label: ssCameraList[i] });
+    }
+    for (var i = 0; i < options.length; i++) {
+      var opt = options[i];
+      var sel = (opt.value === ssMode) ? ' selected' : '';
+      html += '<div class="ss-mode-option' + sel + '" data-ssmode="' + esc(opt.value) + '">';
+      html += '<div class="ss-mode-radio"></div>';
+      html += '<span>' + esc(opt.label) + '</span>';
+      html += '</div>';
+      if (i === 1 && ssCameraList.length > 0) {
+        html += '<div class="ss-mode-divider"></div>';
+      }
+    }
+    picker.innerHTML = html;
+  }
+
+  function toggleModePicker() {
+    var bar = document.getElementById('ss-mode-bar');
+    var picker = document.getElementById('ss-mode-picker');
+    var isOpen = picker.classList.contains('visible');
+    if (isOpen) {
+      picker.classList.remove('visible');
+      bar.classList.remove('open');
+    } else {
+      buildModePicker();
+      picker.classList.add('visible');
+      bar.classList.add('open');
+    }
+  }
+
+  document.getElementById('ss-mode-bar').addEventListener('click', function(e) {
+    e.stopPropagation();
+    toggleModePicker();
+  });
+
+  document.getElementById('ss-mode-picker').addEventListener('click', function(e) {
+    e.stopPropagation();
+    var t = e.target;
+    while (t && t !== this) {
+      if (t.dataset && t.dataset.ssmode) {
+        saveSsMode(t.dataset.ssmode);
+        // Close picker
+        this.classList.remove('visible');
+        document.getElementById('ss-mode-bar').classList.remove('open');
+        return;
+      }
+      t = t.parentElement;
+    }
+  });
+
+  // Close picker when tapping elsewhere
+  document.addEventListener('click', function() {
+    var picker = document.getElementById('ss-mode-picker');
+    if (picker.classList.contains('visible')) {
+      picker.classList.remove('visible');
+      document.getElementById('ss-mode-bar').classList.remove('open');
+    }
+  });
+
+  // Fetch camera list from photoframe-server for the mode picker
+  function fetchSSCameraList() {
+    if (!PHOTOFRAME_URL) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', PHOTOFRAME_URL + '/camera/list?t=' + Date.now());
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        try {
+          var list = JSON.parse(xhr.responseText);
+          if (Array.isArray(list)) {
+            ssCameraList = [];
+            for (var i = 0; i < list.length; i++) {
+              var name = list[i];
+              var skip = false;
+              for (var b = 0; b < BLACKLISTED_CAMS.length; b++) {
+                if (name.toLowerCase() === BLACKLISTED_CAMS[b].toLowerCase()) { skip = true; break; }
+              }
+              if (!skip) ssCameraList.push(name);
+            }
+            dbg('ss: camera list loaded (' + ssCameraList.length + ' cameras)');
+            // Validate saved mode — if camera was removed, fall back to photo
+            if (ssMode.indexOf('camera:') === 0) {
+              var camName = ssMode.substring(7);
+              var found = false;
+              for (var i = 0; i < ssCameraList.length; i++) {
+                if (ssCameraList[i] === camName) { found = true; break; }
+              }
+              if (!found) saveSsMode('photo');
+            }
+            updateModeBar();
+          }
+        } catch(e) { dbg('ss: camera list parse error'); }
+      }
+    };
+    xhr.onerror = function() { dbg('ss: camera list fetch failed'); };
+    xhr.send();
+  }
+
+  // Initialize mode bar display
+  updateModeBar();
+
+  // ══════════════════════════════════════════════════════════
+  // SCREENSAVER: CAMERA MODES
+  // ══════════════════════════════════════════════════════════
+
+  function getCameraName() {
+    if (ssMode === 'camera-cycle') {
+      if (ssCameraList.length === 0) return null;
+      return ssCameraList[ssCamIndex % ssCameraList.length];
+    }
+    if (ssMode.indexOf('camera:') === 0) {
+      return ssMode.substring(7);
+    }
+    return null;
+  }
+
+  function loadCameraSnapshot() {
+    var camName = getCameraName();
+    if (!camName || !PHOTOFRAME_URL) return;
+    if (ssCamPending) return;
+    ssCamPending = true;
+
+    var back = (ssFront === 'a') ? ssPhotoB : ssPhotoA;
+    var front = (ssFront === 'a') ? ssPhotoA : ssPhotoB;
+
+    var loadTimeout = setTimeout(function() {
+      back.onload = null;
+      back.onerror = null;
+      back.src = BLANK;
+      ssCamPending = false;
+      scheduleCameraRefresh();
+    }, 6000);
+
+    back.onload = function() {
+      clearTimeout(loadTimeout);
+      back.classList.add('visible');
+      setTimeout(function() {
+        front.classList.remove('visible');
+        front.onload = null;
+        front.onerror = null;
+        front.src = BLANK;
+      }, 400);
+      ssFront = (ssFront === 'a') ? 'b' : 'a';
+      ssCamPending = false;
+      scheduleCameraRefresh();
+    };
+    back.onerror = function() {
+      clearTimeout(loadTimeout);
+      back.onload = null;
+      back.onerror = null;
+      back.src = BLANK;
+      ssCamPending = false;
+      scheduleCameraRefresh();
+    };
+
+    back.src = PHOTOFRAME_URL + '/camera/' + camName + '?t=' + Date.now();
+  }
+
+  function scheduleCameraRefresh() {
+    clearTimeout(ssCamRefreshTimer);
+    ssCamRefreshTimer = setTimeout(function() {
+      // In cycle mode, advance camera periodically
+      if (ssMode === 'camera-cycle' && ssCameraList.length > 1) {
+        ssCamCycleCounter++;
+        var ticksPerCycle = Math.max(1, Math.round((SS_CAM_CYCLE_SEC * 1000) / SS_CAM_REFRESH_MS));
+        if (ssCamCycleCounter >= ticksPerCycle) {
+          ssCamCycleCounter = 0;
+          ssCamIndex = (ssCamIndex + 1) % ssCameraList.length;
+        }
+      }
+      loadCameraSnapshot();
+    }, SS_CAM_REFRESH_MS);
+  }
+
+  function startCameraScreensaver() {
+    ssCamPending = false;
+    ssCamCycleCounter = 0;
+    ssCamIndex = 0;
+    // Disable crossfade transition for camera mode (instant swap)
+    ssPhotoA.style.transition = 'none';
+    ssPhotoB.style.transition = 'none';
+    loadCameraSnapshot();
+    renderSSClock();
+    renderSSWeather();
+    renderSSNextEvent();
+    renderSSDebug();
+  }
+
+  function stopCameraScreensaver() {
+    clearTimeout(ssCamRefreshTimer);
+    ssCamRefreshTimer = null;
+    ssCamPending = false;
+    // Restore crossfade transition
+    ssPhotoA.style.transition = 'opacity 1.5s ease-in-out';
+    ssPhotoB.style.transition = 'opacity 1.5s ease-in-out';
+  }
+
+  // ══════════════════════════════════════════════════════════
   // INIT
   // ══════════════════════════════════════════════════════════
 
   function init() {
-    dbg('init() — showing dashboard');
+    dbg('init() — showing dashboard, ssMode=' + ssMode);
+    fetchSSCameraList();
     showDashboard();
   }
 
