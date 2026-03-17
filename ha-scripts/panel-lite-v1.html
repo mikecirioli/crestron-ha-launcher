@@ -5,7 +5,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Crestron Panel Lite v2</title>
+<title>Crestron Panel Lite</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -224,8 +224,7 @@
 
   /* Calendar section */
   .calendar-section {
-    flex: 0 1 auto;
-    max-height: 40%;
+    flex: 1 1 auto;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 0;
@@ -234,35 +233,6 @@
   }
   .calendar-section::-webkit-scrollbar { width: 4px; }
   .calendar-section::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
-
-  /* Mini camera cycle widget */
-  .mini-cam {
-    flex: 1 1 auto;
-    min-height: 0;
-    position: relative;
-    overflow: hidden;
-    background: #000;
-    border-top: 1px solid rgba(255,255,255,0.06);
-  }
-  .mini-cam-layer {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .mini-cam-label {
-    position: absolute;
-    top: 6px;
-    left: 8px;
-    background: rgba(0,0,0,0.55);
-    color: #fff;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 500;
-    z-index: 2;
-  }
 
   /* Screensaver mode picker */
   .ss-mode-bar {
@@ -530,11 +500,6 @@
         <div class="weather-section" id="weather-section"></div>
         <div class="thermostat-section" id="thermostat-section"></div>
         <div class="calendar-section" id="calendar-section"></div>
-        <div class="mini-cam" id="mini-cam">
-          <img id="mini-cam-a" class="mini-cam-layer" alt="">
-          <img id="mini-cam-b" class="mini-cam-layer" style="opacity:0" alt="">
-          <div class="mini-cam-label" id="mini-cam-label"></div>
-        </div>
         <div class="ss-mode-bar" id="ss-mode-bar">
           <span class="ss-mode-icon" id="ss-mode-icon"></span>
           <span class="ss-mode-label" id="ss-mode-label">Photo Frame</span>
@@ -594,7 +559,7 @@ window.onerror = function(msg, src, line, col, err) {
   var WEATHER_ENTITY    = C.WEATHER_ENTITY  || 'weather.forecast_home';
   var THERMOSTAT_ENTITY = C.THERMOSTAT_ENTITY || '';
   var HOURLY_HOURS      = C.HOURLY_HOURS   || 5;
-  // v2: CAMERA_SELECTOR no longer used (main cam is PRIMARY_CAM, mini cam cycles via photoframe-server)
+  var CAMERA_SELECTOR   = C.CAMERA_SELECTOR || 'input_select.camera_selector';
   var CAM_REFRESH_MS    = C.CAM_REFRESH_MS  || 3000;
   var CAM_SYNC_MS       = C.CAM_SYNC_MS     || 1500;
   var CALENDAR_MS       = C.CALENDAR_MS     || 300000;
@@ -609,9 +574,6 @@ window.onerror = function(msg, src, line, col, err) {
   var WATCH_REFRESH_MS  = C.WATCH_REFRESH_MS || 2000;
   var WATCH_TIMEOUT_MS  = C.WATCH_TIMEOUT_MS || 300000; // 5 min
   var PHOTO_FIT         = C.PHOTO_FIT || 'contain';  // 'contain' (fit) or 'cover' (fill/crop)
-  var PRIMARY_CAM       = C.PRIMARY_CAM || 'gatetown';  // v2: single cam for main display
-  var MINI_CAM_REFRESH_MS = C.MINI_CAM_REFRESH_MS || 3000;
-  var MINI_CAM_CYCLE_SEC  = C.MINI_CAM_CYCLE_SEC  || 10;  // seconds per camera in mini cycle
 
   // 1x1 transparent GIF — forces Chromium 95 to actually free decoded bitmap
   // (img.src = '' does NOT release GPU memory in this WebView version)
@@ -660,10 +622,13 @@ window.onerror = function(msg, src, line, col, err) {
   // ══════════════════════════════════════════════════════════
 
   var states = {};   // entity_id → state object (our own cache)
+  var curCam = -1;
   var idleTimer = null;
   var manualScreensaver = false;
   var isScreensaver = false;
   var isCameraWatch = false;
+  var watchCamIdx = -1;
+  var cwRefreshInterval = null;
   var cwTimeoutTimer = null;
 
   // Screensaver photo state
@@ -686,18 +651,9 @@ window.onerror = function(msg, src, line, col, err) {
     if (saved) ssMode = saved;
   } catch(e) {}
 
-  // v2: Primary camera state (single cam from photoframe-server)
-  var primaryCamTimer = null;
-  var primaryCamPending = false;
-
-  // v2: Mini camera cycle state
-  var miniCamList = [];        // fetched from photoframe-server
-  var miniCamIndex = 0;
-  var miniCamCycleCounter = 0;
-  var miniCamTimer = null;
-  var miniCamPending = false;
-
   // Timers (stored for cleanup)
+  var camRefreshInterval = null;
+  var camSyncInterval = null;
 
   // DOM refs
   var dashEl = document.getElementById('dashboard');
@@ -710,12 +666,6 @@ window.onerror = function(msg, src, line, col, err) {
   var ssPhotoB = document.getElementById('ss-photo-b');
   var ssFront = 'a';
   var ssOverlay = document.getElementById('ss-overlay');
-
-  // v2: Mini cam DOM refs
-  var miniCamA = document.getElementById('mini-cam-a');
-  var miniCamB = document.getElementById('mini-cam-b');
-  var miniCamFront = 'a';
-  var miniCamLabel = document.getElementById('mini-cam-label');
 
   // Apply configurable photo fit mode to screensaver layers
   ssPhotoA.style.objectFit = PHOTO_FIT;
@@ -942,9 +892,10 @@ window.onerror = function(msg, src, line, col, err) {
     startScreensaver();
   }
 
-  function showCameraWatch() {
+  function showCameraWatch(camIdx) {
     isCameraWatch = true;
     isScreensaver = true;  // reuse overlay bounce + clock updates
+    watchCamIdx = (camIdx >= 0 && camIdx < CAMERAS.length) ? camIdx : curCam;
     dashEl.classList.add('hidden');
     ssEl.classList.remove('hidden');
     stopDashboardTimers();
@@ -985,7 +936,7 @@ window.onerror = function(msg, src, line, col, err) {
   document.getElementById('chips-bar').addEventListener('click', function(e) {
     var t = e.target;
     while (t && t !== this) {
-      if (t.id === 'chip-watch') { showCameraWatch(); return; }
+      if (t.id === 'chip-watch') { showCameraWatch(curCam); return; }
       t = t.parentElement;
     }
   });
@@ -1032,8 +983,9 @@ window.onerror = function(msg, src, line, col, err) {
         } else if (isScreensaver) {
           manualScreensaver = false;
           showDashboard();
+          setTimeout(function() { cycleCamera('next'); }, 300);
         } else {
-          cycleMiniCam('next');
+          cycleCamera('next');
         }
         startIdleTimer();
         break;
@@ -1043,8 +995,9 @@ window.onerror = function(msg, src, line, col, err) {
         } else if (isScreensaver) {
           manualScreensaver = false;
           showDashboard();
+          setTimeout(function() { cycleCamera('previous'); }, 300);
         } else {
-          cycleMiniCam('prev');
+          cycleCamera('previous');
         }
         startIdleTimer();
         break;
@@ -1055,16 +1008,11 @@ window.onerror = function(msg, src, line, col, err) {
     }
   }, true);
 
-  function cycleMiniCam(direction) {
-    if (miniCamList.length < 2) return;
-    if (direction === 'next') {
-      miniCamIndex = (miniCamIndex + 1) % miniCamList.length;
-    } else {
-      miniCamIndex = (miniCamIndex - 1 + miniCamList.length) % miniCamList.length;
-    }
-    miniCamCycleCounter = 0;
-    miniCamPending = false;
-    refreshMiniCam();
+  function cycleCamera(direction) {
+    if (!wsReady) return;
+    var svc = direction === 'next' ? 'select_next' : 'select_previous';
+    wsCallService('input_select', svc, { cycle: true },
+      { entity_id: CAMERA_SELECTOR });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1097,126 +1045,50 @@ window.onerror = function(msg, src, line, col, err) {
   }
 
   // ══════════════════════════════════════════════════════════
-  // DASHBOARD: PRIMARY CAMERA (v2 — single cam from photoframe-server)
+  // DASHBOARD: CAMERA
   // ══════════════════════════════════════════════════════════
 
-  function refreshPrimaryCam() {
-    if (!PHOTOFRAME_URL || !PRIMARY_CAM) return;
-    if (primaryCamPending) return;
-    primaryCamPending = true;
-    camLabel.textContent = PRIMARY_CAM;
-
-    var back = (camFront === 'a') ? camImgB : camImgA;
-    var front = (camFront === 'a') ? camImgA : camImgB;
-
-    var loadTimeout = setTimeout(function() {
-      back.onload = null;
-      back.onerror = null;
-      back.src = BLANK;
-      primaryCamPending = false;
-      schedulePrimaryCam();
-    }, 6000);
-
-    back.onload = function() {
-      clearTimeout(loadTimeout);
-      back.style.opacity = '1';
-      front.style.opacity = '0';
-      camFront = (camFront === 'a') ? 'b' : 'a';
-      primaryCamPending = false;
-      schedulePrimaryCam();
-    };
-    back.onerror = function() {
-      clearTimeout(loadTimeout);
-      back.onload = null;
-      back.onerror = null;
-      back.src = BLANK;
-      primaryCamPending = false;
-      schedulePrimaryCam();
-    };
-
-    back.src = PHOTOFRAME_URL + '/camera/' + PRIMARY_CAM + '?t=' + Date.now();
-  }
-
-  function schedulePrimaryCam() {
-    clearTimeout(primaryCamTimer);
-    primaryCamTimer = setTimeout(refreshPrimaryCam, 2000);
-  }
-
-  function stopPrimaryCam() {
-    clearTimeout(primaryCamTimer);
-    primaryCamTimer = null;
-    primaryCamPending = false;
-    camImgA.onload = null; camImgA.onerror = null;
-    camImgB.onload = null; camImgB.onerror = null;
-    camImgA.src = BLANK; camImgB.src = BLANK;
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // DASHBOARD: MINI CAMERA CYCLE (v2 — cycles through photoframe-server cameras)
-  // ══════════════════════════════════════════════════════════
-
-  function refreshMiniCam() {
-    if (!PHOTOFRAME_URL || miniCamList.length === 0) return;
-    if (miniCamPending) return;
-    miniCamPending = true;
-
-    var camName = miniCamList[miniCamIndex % miniCamList.length];
-    miniCamLabel.textContent = camName;
-
-    var back = (miniCamFront === 'a') ? miniCamB : miniCamA;
-    var front = (miniCamFront === 'a') ? miniCamA : miniCamB;
-
-    var loadTimeout = setTimeout(function() {
-      back.onload = null;
-      back.onerror = null;
-      back.src = BLANK;
-      miniCamPending = false;
-      scheduleMiniCam();
-    }, 6000);
-
-    back.onload = function() {
-      clearTimeout(loadTimeout);
-      back.style.opacity = '1';
-      front.style.opacity = '0';
-      miniCamFront = (miniCamFront === 'a') ? 'b' : 'a';
-      miniCamPending = false;
-      scheduleMiniCam();
-    };
-    back.onerror = function() {
-      clearTimeout(loadTimeout);
-      back.onload = null;
-      back.onerror = null;
-      back.src = BLANK;
-      miniCamPending = false;
-      scheduleMiniCam();
-    };
-
-    back.src = PHOTOFRAME_URL + '/camera/' + camName + '?t=' + Date.now();
-  }
-
-  function scheduleMiniCam() {
-    clearTimeout(miniCamTimer);
-    miniCamTimer = setTimeout(function() {
-      // Advance camera periodically
-      if (miniCamList.length > 1) {
-        miniCamCycleCounter++;
-        var ticksPerCycle = Math.max(1, Math.round((MINI_CAM_CYCLE_SEC * 1000) / MINI_CAM_REFRESH_MS));
-        if (miniCamCycleCounter >= ticksPerCycle) {
-          miniCamCycleCounter = 0;
-          miniCamIndex = (miniCamIndex + 1) % miniCamList.length;
+  function syncCamera() {
+    var s = states[CAMERA_SELECTOR];
+    if (!s) return;
+    for (var i = 0; i < CAMERAS.length; i++) {
+      if (CAMERAS[i].entity === s.state) {
+        if (i !== curCam) {
+          curCam = i;
+          refreshCamera();
         }
+        return;
       }
-      refreshMiniCam();
-    }, MINI_CAM_REFRESH_MS);
+    }
   }
 
-  function stopMiniCam() {
-    clearTimeout(miniCamTimer);
-    miniCamTimer = null;
-    miniCamPending = false;
-    miniCamA.onload = null; miniCamA.onerror = null;
-    miniCamB.onload = null; miniCamB.onerror = null;
-    miniCamA.src = BLANK; miniCamB.src = BLANK;
+  var camPending = false; // guard against overlapping fetches
+
+  function refreshCamera() {
+    if (curCam < 0 || curCam >= CAMERAS.length) return;
+    if (camPending) return; // skip if previous fetch still in flight
+    camPending = true;
+    var cam = CAMERAS[curCam];
+    camLabel.textContent = cam.name;
+    dbg('cam: signing ' + cam.entity);
+    signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
+      if (!url) { dbg('cam: signPath returned null'); camPending = false; return; }
+      // Load into the hidden (back) layer, then swap
+      var back = (camFront === 'a') ? camImgB : camImgA;
+      var front = (camFront === 'a') ? camImgA : camImgB;
+      back.onload = function() {
+        // Show back layer, hide front
+        back.style.opacity = '1';
+        front.style.opacity = '0';
+        camFront = (camFront === 'a') ? 'b' : 'a';
+        camPending = false;
+      };
+      back.onerror = function() {
+        dbg('cam: load FAILED');
+        camPending = false;
+      };
+      back.src = url;
+    });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1538,22 +1410,18 @@ window.onerror = function(msg, src, line, col, err) {
   }
 
   // ══════════════════════════════════════════════════════════
-  // CAMERA WATCH MODE (v2 — uses photoframe-server)
+  // CAMERA WATCH MODE
   // ══════════════════════════════════════════════════════════
   // Full-screen single-camera view reusing the screensaver DOM.
-  // Returns to dashboard after WATCH_TIMEOUT_MS or on touch/click.
+  // Refreshes snapshots at WATCH_REFRESH_MS. Returns to dashboard
+  // after WATCH_TIMEOUT_MS or on touch/click.
 
   var cwPending = false;
-  var cwRefreshTimer = null;
-  var cwCamName = '';  // v2: camera name string instead of index
 
   function startCameraWatch() {
-    cwCamName = (miniCamList.length > 0) ? miniCamList[miniCamIndex % miniCamList.length] : PRIMARY_CAM;
-    dbg('cw: start, camera=' + cwCamName);
-    // Disable crossfade for camera watch
-    ssPhotoA.style.transition = 'none';
-    ssPhotoB.style.transition = 'none';
+    dbg('cw: start, camera=' + (CAMERAS[watchCamIdx] ? CAMERAS[watchCamIdx].name : '?'));
     refreshWatchCamera();
+    cwRefreshInterval = setInterval(refreshWatchCamera, WATCH_REFRESH_MS);
     renderSSClock();
     renderSSWeather();
     renderSSNextEvent();
@@ -1561,78 +1429,51 @@ window.onerror = function(msg, src, line, col, err) {
   }
 
   function stopCameraWatch() {
-    clearTimeout(cwRefreshTimer);
-    cwRefreshTimer = null;
+    if (cwRefreshInterval) { clearInterval(cwRefreshInterval); cwRefreshInterval = null; }
     if (cwTimeoutTimer) { clearTimeout(cwTimeoutTimer); cwTimeoutTimer = null; }
     cwPending = false;
-    ssPhotoA.style.transition = 'opacity 1.5s ease-in-out';
-    ssPhotoB.style.transition = 'opacity 1.5s ease-in-out';
+    // Release images (stopScreensaver handles the ss-photo elements)
   }
 
   function refreshWatchCamera() {
-    if (!cwCamName || !PHOTOFRAME_URL) return;
+    if (watchCamIdx < 0 || watchCamIdx >= CAMERAS.length) return;
     if (cwPending) return;
     cwPending = true;
-
-    var back = (ssFront === 'a') ? ssPhotoB : ssPhotoA;
-    var front = (ssFront === 'a') ? ssPhotoA : ssPhotoB;
-
-    var loadTimeout = setTimeout(function() {
-      back.onload = null;
-      back.onerror = null;
-      back.src = BLANK;
-      cwPending = false;
-      scheduleWatchRefresh();
-    }, 6000);
-
-    back.onload = function() {
-      clearTimeout(loadTimeout);
-      back.classList.add('visible');
-      setTimeout(function() {
-        front.classList.remove('visible');
-        front.onload = null;
-        front.onerror = null;
-        front.src = BLANK;
-      }, 400);
-      ssFront = (ssFront === 'a') ? 'b' : 'a';
-      cwPending = false;
-      scheduleWatchRefresh();
-    };
-    back.onerror = function() {
-      clearTimeout(loadTimeout);
-      back.onload = null;
-      back.onerror = null;
-      back.src = BLANK;
-      cwPending = false;
-      scheduleWatchRefresh();
-    };
-
-    back.src = PHOTOFRAME_URL + '/camera/' + cwCamName + '?t=' + Date.now();
-  }
-
-  function scheduleWatchRefresh() {
-    clearTimeout(cwRefreshTimer);
-    cwRefreshTimer = setTimeout(refreshWatchCamera, WATCH_REFRESH_MS);
+    var cam = CAMERAS[watchCamIdx];
+    signPath('/api/camera_proxy/' + cam.entity + '?t=' + Date.now(), function(url) {
+      if (!url) { cwPending = false; return; }
+      var back = (ssFront === 'a') ? ssPhotoB : ssPhotoA;
+      var front = (ssFront === 'a') ? ssPhotoA : ssPhotoB;
+      back.onload = function() {
+        back.classList.add('visible');
+        setTimeout(function() {
+          front.classList.remove('visible');
+          front.onload = null;
+          front.onerror = null;
+          front.src = BLANK;
+        }, 400);
+        ssFront = (ssFront === 'a') ? 'b' : 'a';
+        cwPending = false;
+      };
+      back.onerror = function() {
+        dbg('cw: load failed');
+        cwPending = false;
+      };
+      back.src = url;
+    });
   }
 
   function cycleWatchCamera(dir) {
-    // v2: cycle through all cameras from photoframe-server
-    var allCams = ssCameraList.length > 0 ? ssCameraList : miniCamList;
-    if (allCams.length < 2) return;
-    var curIdx = 0;
-    for (var i = 0; i < allCams.length; i++) {
-      if (allCams[i] === cwCamName) { curIdx = i; break; }
-    }
+    if (CAMERAS.length < 2) return;
     if (dir === 'next') {
-      curIdx = (curIdx + 1) % allCams.length;
+      watchCamIdx = (watchCamIdx + 1) % CAMERAS.length;
     } else {
-      curIdx = (curIdx - 1 + allCams.length) % allCams.length;
+      watchCamIdx = (watchCamIdx - 1 + CAMERAS.length) % CAMERAS.length;
     }
-    cwCamName = allCams[curIdx];
-    dbg('cw: cycle to ' + cwCamName);
+    dbg('cw: cycle to ' + CAMERAS[watchCamIdx].name);
     cwPending = false;
     refreshWatchCamera();
-    renderSSClock();
+    renderSSClock(); // update camera name in overlay
     // Reset the 5-min timeout on interaction
     if (cwTimeoutTimer) clearTimeout(cwTimeoutTimer);
     cwTimeoutTimer = setTimeout(function() {
@@ -1650,17 +1491,17 @@ window.onerror = function(msg, src, line, col, err) {
   function startDashboardTimers() {
     stopDashboardTimers();
     if (!detSlots.length) initDetectionStrip();
-    // v2: start primary cam and mini cycle (both use photoframe-server)
-    refreshPrimaryCam();
-    miniCamCycleCounter = 0;
-    miniCamIndex = 0;
-    refreshMiniCam();
+    syncCamera();
+    refreshCamera();
     renderChips();
     renderWeather();
     renderThermostat();
     fetchDetections();
     fetchCalendar();
 
+    camRefreshInterval = setInterval(refreshCamera, CAM_REFRESH_MS);
+    camSyncInterval = setInterval(syncCamera, CAM_SYNC_MS);
+    dashTimers.push(camRefreshInterval, camSyncInterval);
     dashTimers.push(setInterval(renderChips, 30000));
     dashTimers.push(setInterval(renderWeather, WEATHER_MS));
     dashTimers.push(setInterval(renderThermostat, 60000));
@@ -1672,8 +1513,9 @@ window.onerror = function(msg, src, line, col, err) {
   function stopDashboardTimers() {
     for (var i = 0; i < dashTimers.length; i++) clearInterval(dashTimers[i]);
     dashTimers = [];
-    stopPrimaryCam();
-    stopMiniCam();
+    // Release camera images
+    camImgA.src = BLANK;
+    camImgB.src = BLANK;
     // Release detection thumbnails
     for (var i = 0; i < detSlots.length; i++) {
       detSlots[i].img.src = BLANK;
@@ -1756,8 +1598,8 @@ window.onerror = function(msg, src, line, col, err) {
     document.getElementById('ss-clock').textContent =
       now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     var dateText = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-    if (isCameraWatch && cwCamName) {
-      dateText = cwCamName + '  \u00B7  ' + dateText;
+    if (isCameraWatch && watchCamIdx >= 0 && CAMERAS[watchCamIdx]) {
+      dateText = CAMERAS[watchCamIdx].name + '  \u00B7  ' + dateText;
     } else if (isScreensaver && ssMode !== 'photo') {
       var camName = getCameraName();
       if (camName) dateText = camName + '  \u00B7  ' + dateText;
@@ -2052,14 +1894,6 @@ window.onerror = function(msg, src, line, col, err) {
               if (!skip) ssCameraList.push(name);
             }
             dbg('ss: camera list loaded (' + ssCameraList.length + ' cameras)');
-            // v2: populate mini cam list (exclude primary cam)
-            miniCamList = [];
-            for (var j = 0; j < ssCameraList.length; j++) {
-              if (ssCameraList[j].toLowerCase() !== PRIMARY_CAM.toLowerCase()) {
-                miniCamList.push(ssCameraList[j]);
-              }
-            }
-            dbg('v2: mini cam list: ' + miniCamList.length + ' cameras');
             // Validate saved mode — if camera was removed, fall back to photo
             if (ssMode.indexOf('camera:') === 0) {
               var camName = ssMode.substring(7);
