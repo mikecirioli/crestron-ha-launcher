@@ -3,7 +3,7 @@
 
 sub init()
     m.SERVER_URL = "http://192.168.1.245:8099"
-    m.BLACKLIST = ["driveway", "armory", "critter", "frontPorch"]
+    m.BLACKLIST = ["driveway"]
 
     m.modeList = m.top.findNode("modeList")
     m.loading = m.top.findNode("loading")

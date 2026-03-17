@@ -26,7 +26,7 @@ sub init()
 
     m.CYCLE_SEC   = 5        ' seconds per camera when cycling
     m.cameraName  = "gatetown"  ' fallback default
-    m.BLACKLIST   = ["driveway", "armory", "critter", "frontPorch"]
+    m.BLACKLIST   = ["driveway"]
 
     ' Data sources — each cycle shows the next one
     m.dataSources = [
