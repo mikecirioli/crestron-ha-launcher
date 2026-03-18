@@ -2060,6 +2060,8 @@ window.onerror = function(msg, src, line, col, err) {
               }
             }
             dbg('v2: mini cam list: ' + miniCamList.length + ' cameras');
+            // Kick off mini cam cycle now that we have the list
+            if (miniCamList.length > 0 && !miniCamTimer) refreshMiniCam();
             // Validate saved mode — if camera was removed, fall back to photo
             if (ssMode.indexOf('camera:') === 0) {
               var camName = ssMode.substring(7);
