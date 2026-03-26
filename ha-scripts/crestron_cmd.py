@@ -21,12 +21,19 @@ import os
 import sys
 import paramiko
 
-HOST = os.environ.get("CRESTRON_HOST", "192.168.1.58")
 PORT = int(os.environ.get("CRESTRON_PORT", "22"))
 USER = os.environ.get("CRESTRON_USER", "admin")
 PASS = os.environ.get("CRESTRON_PASS", "admin")
 
-cmd = " ".join(sys.argv[1:])
+# Parse optional --host flag; remainder is the command
+args = sys.argv[1:]
+host_override = None
+if args and args[0] == "--host" and len(args) >= 2:
+    host_override = args[1]
+    args = args[2:]
+
+HOST = host_override or os.environ.get("CRESTRON_HOST", "192.168.1.58")
+cmd = " ".join(args)
 if not cmd:
     print("Usage: crestron_cmd.py <command>", file=sys.stderr)
     sys.exit(1)

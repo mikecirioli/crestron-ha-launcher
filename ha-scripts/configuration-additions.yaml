@@ -86,6 +86,19 @@ shell_command:
   crestron_wbsstream_status: >-
     python3 /config/scripts/crestron_cmd.py 'WBSSTREAM'
 
+  # ── Panel 2 (192.168.1.61) ───────────────────────────────────────
+  # Uses --host flag to target the second panel.
+  # Panel 2 has a non-default password — pass via CRESTRON_PASS env var.
+  crestron2_open_browser: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.61
+    'BROWSEROPEN http://<HA_IP>:8123/local/panel-lite.html'
+  crestron2_close_browser: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.61 'BROWSERCLOSE'
+  crestron2_standby: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.61 'standby'
+  crestron2_wake: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.61 'standby off'
+
 # ── Input select: camera cycling ─────────────────────────────────
 input_select:
   camera_selector:

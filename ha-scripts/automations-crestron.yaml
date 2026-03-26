@@ -5,43 +5,42 @@
 # ═══════════════════════════════════════════════════════════════════
 
 # ── 1. Boot trigger: CH5 app fires webhook → open browser ────────
-# This is the original automation from the crestron-ha-launcher.
-# Update the BROWSEROPEN URL to point to the Crestron dashboard.
+# Both panels use the same CH5 app with the same webhook ID.
+# This automation opens browsers on both panels — BROWSEROPEN on an
+# already-running panel just refreshes, so it's harmless.
 - alias: "Crestron: Open browser on boot"
   description: >-
-    When the panel boots, the CH5 app fires a webhook.
-    This automation SSHs into the panel and opens the browser
-    pointed at the Crestron dashboard.
+    When either panel boots, the CH5 app fires this webhook.
+    Opens browser on both panels.
   triggers:
     - trigger: webhook
       webhook_id: crestron-open-browser
   actions:
-    - action: shell_command.crestron_syslog_clear
-    - action: shell_command.crestron_c3debug_off
+    - action: shell_command.crestron_close_browser
+    - action: shell_command.crestron2_close_browser
     - delay:
-        seconds: 2
+        seconds: 3
     - action: shell_command.crestron_open_browser
+    - action: shell_command.crestron2_open_browser
 
 # ── 2. Periodic browser restart (memory cleanup) ─────────────────
-# Every 2 hours, fully restart the panel browser. BROWSERCLOSE kills
+# Every 6 hours, fully restart both panel browsers. BROWSERCLOSE kills
 # the generalweb process entirely (confirmed via TASKSTAT), reclaiming
 # all leaked WebView memory. BROWSEROPEN spawns a fresh process.
-# The panel froze at ~3.5 hours with panel-lite; 2-hour cycle
-# provides comfortable margin.
-- alias: "Crestron: Periodic browser restart"
+- alias: "Crestron Panels: Periodic browser restart"
   description: >-
-    Restarts the Crestron panel browser every 2 hours to prevent
-    WebView memory leaks from accumulating. BROWSERCLOSE fully kills
-    the generalweb process; BROWSEROPEN spawns a fresh one.
+    Restarts both panel browsers every 6 hours to prevent
+    memory buildup from long-running camera streams and JS.
   triggers:
     - trigger: time_pattern
-      hours: "/2"
+      hours: "/6"
   actions:
-    - action: shell_command.crestron_syslog_clear
     - action: shell_command.crestron_close_browser
+    - action: shell_command.crestron2_close_browser
     - delay:
         seconds: 5
     - action: shell_command.crestron_open_browser
+    - action: shell_command.crestron2_open_browser
 
 # ── 3. Cycle cameras on the Crestron dashboard ──────────────────
 # Advances the camera selector every 15 seconds so the dashboard
@@ -74,3 +73,9 @@
       hours: "/1"
   actions:
     - action: shell_command.photoframe_build_list
+
+# ═══════════════════════════════════════════════════════════════════
+# Panel 2 (192.168.1.61) — no separate automations needed.
+# Boot webhook, periodic restart, standby/wake all consolidated
+# into the automations above (both panels handled together).
+# ═══════════════════════════════════════════════════════════════════
