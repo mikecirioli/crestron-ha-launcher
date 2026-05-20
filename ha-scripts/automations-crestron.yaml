@@ -18,10 +18,12 @@
   actions:
     - action: shell_command.crestron_close_browser
     - action: shell_command.crestron2_close_browser
+    - action: shell_command.crestron3_close_browser
     - delay:
         seconds: 3
     - action: shell_command.crestron_open_browser
     - action: shell_command.crestron2_open_browser
+    - action: shell_command.crestron3_open_browser
 
 # ── 2. Periodic browser restart (memory cleanup) ─────────────────
 # Every 6 hours, fully restart both panel browsers. BROWSERCLOSE kills
@@ -37,10 +39,12 @@
   actions:
     - action: shell_command.crestron_close_browser
     - action: shell_command.crestron2_close_browser
+    - action: shell_command.crestron3_close_browser
     - delay:
         seconds: 5
     - action: shell_command.crestron_open_browser
     - action: shell_command.crestron2_open_browser
+    - action: shell_command.crestron3_open_browser
 
 # ── 3. Cycle cameras on the Crestron dashboard ──────────────────
 # Advances the camera selector every 15 seconds so the dashboard
