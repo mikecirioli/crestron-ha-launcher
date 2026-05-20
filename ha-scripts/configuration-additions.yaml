@@ -99,6 +99,17 @@ shell_command:
   crestron2_wake: >-
     CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.61 'standby off'
 
+  # ── Panel 3 (192.168.1.64) ───────────────────────────────────────
+  crestron3_open_browser: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.64
+    'BROWSEROPEN http://<HA_IP>:8123/local/panel-lite.html'
+  crestron3_close_browser: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.64 'BROWSERCLOSE'
+  crestron3_standby: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.64 'standby'
+  crestron3_wake: >-
+    CRESTRON_PASS=byteme420 python3 /config/scripts/crestron_cmd.py --host 192.168.1.64 'standby off'
+
 # ── Input select: camera cycling ─────────────────────────────────
 input_select:
   camera_selector:
